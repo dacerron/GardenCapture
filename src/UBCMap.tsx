@@ -19,23 +19,20 @@ export default function UBCMap({
   const markersRef = useRef<google.maps.Marker[]>([]);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
 
-  const pins: Pin[] = [
-    {
-      title: "UBC Main (Site A)",
-      position: { lat: 49.2606, lng: -123.2460 },
-      path: defaultGaussianPath,
-    },
-    {
-      title: "UBC Field (Site B)",
-      position: { lat: 49.2660, lng: -123.2450 },
-      path: "/assets/gaussian_splat_data/truck/truck.ksplat",
-    },
-    {
-      title: "UBC Point (Site C)",
-      position: { lat: 49.2555, lng: -123.2400 },
-      path: "/assets/gaussian_splat_data/garden/garden.ksplat",
-    },
-  ];
+const pins: Pin[] = [];
+
+fetch('/pins')
+  .then(res => res.json())
+  .then(data => {
+    for (const p of data) {
+      pins.push({
+        title: p.title,
+        position: { lat: p.position.lat, lng: p.position.lng },
+        path: p.path,
+      });
+    }
+  })
+  .catch(err => console.error('Failed to load pins', err));
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +43,7 @@ export default function UBCMap({
 
       if (!mapRef.current) {
         mapRef.current = new google.maps.Map(containerRef.current, {
-          center: { lat: 49.2606, lng: -123.2460 }, // UBC Vancouver
+          center: { lat: 49.2606, lng: -123.2460 },
           zoom: 13,
           mapTypeId: "terrain",
           streetViewControl: false,
