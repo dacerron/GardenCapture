@@ -114,16 +114,22 @@ export class ThreeApp {
     this.container.appendChild(this.renderer.domElement);
 
     const gl = this.renderer.getContext();
-    const coi =
-      (globalThis as unknown as WindowOrWorkerGlobalScope)
-        .crossOriginIsolated ?? false;
+    const scope = globalThis as unknown as WindowOrWorkerGlobalScope;
+    const coi = scope.crossOriginIsolated ?? false;
+    const hasSharedArrayBuffer = typeof SharedArrayBuffer !== "undefined";
+    const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator;
     console.info(
       "WebGL2:",
       gl instanceof WebGL2RenderingContext,
       "| COI:",
       coi,
       "| SAB:",
-      typeof SharedArrayBuffer !== "undefined"
+      hasSharedArrayBuffer,
+      "| WebGPU:",
+      hasWebGPU
+    );
+    console.info(
+      "Gaussian splats running with CPU sort (GPU sort not supported by current library build)."
     );
 
     // camera
@@ -262,6 +268,7 @@ export class ThreeApp {
     );
 
     try {
+      this.gsViewer?.clear?.();
       await this.gsViewer?.addSplatScene(path, {
         position: [0, 0, 0],
         scale: [1, 1, 1],

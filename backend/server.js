@@ -9,13 +9,21 @@ app.use(express.static('public')); // serves /admin.html
 
 // ----- existing read routes -----
 
+const normalizePath = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  return value.replace(/\\/g, '/');
+};
+
 app.get('/pins', (req, res) => {
     const rows = db.prepare(`
       SELECT
         name        AS title,
         latitude    AS lat,
         longitude   AS lng,
-        file        AS path
+        file        AS path,
+        description AS description,
+        thumbnail   AS thumbnail,
+        thumbnail_alt AS thumbnail_alt
       FROM fields
       WHERE id IN (8, 9, 10)
       AND latitude IS NOT NULL 
@@ -27,9 +35,12 @@ app.get('/pins', (req, res) => {
     const pins = rows.map(r => ({
       title: r.title ?? '',
       position: { lat: r.lat, lng: r.lng },
-      path: r.path ?? ''
+      path: normalizePath(r.path),
+      description: r.description ?? '',
+      thumbnail: normalizePath(r.thumbnail),
+      thumbnailAlt: r.thumbnail_alt ?? ''
     }));
-  
+
     res.json(pins);
   });
 
