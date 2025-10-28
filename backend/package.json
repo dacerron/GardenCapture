@@ -3,10 +3,14 @@
     "version": "1.0.0",
     "private": true,
     "scripts": {
-      "dev": "node server.js"
+        "dev": "node server.js"
     },
     "dependencies": {
-      "express": "^4.21.1",
-      "better-sqlite3": "^11.7.0"
+        "better-sqlite3": "^11.7.0",
+        "dotenv": "^17.2.3",
+        "express": "^4.21.1",
+        "express-session": "^1.18.2",
+        "passport": "^0.7.0",
+        "passport-google-oauth20": "^2.0.0"
     }
-  }
+}
