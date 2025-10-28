@@ -1,11 +1,141 @@
+require('dotenv').config();
+
 const express = require('express');
+const path = require('path');
+const session = require('express-session');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const Database = require('better-sqlite3');
 
 const app = express();
 const db = new Database('app.db');
 
+const requiredEnv = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'SESSION_SECRET', 'ADMIN_WHITELIST'];
+requiredEnv.forEach((key) => {
+  if (!process.env[key] || !process.env[key].trim()) {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+});
+
+const allowedEmails = new Set(
+  process.env.ADMIN_WHITELIST.split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+if (allowedEmails.size === 0) {
+  throw new Error('ADMIN_WHITELIST must contain at least one comma-separated email address');
+}
+
+const googleCallbackURL = process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3000/auth/google/callback';
+
 app.use(express.json());
-app.use(express.static('public')); // serves /admin.html
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production'
+    }
+  })
+);
+
+passport.serializeUser((user, done) => {
+  done(null, user);
+});
+
+passport.deserializeUser((user, done) => {
+  done(null, user);
+});
+
+passport.use(
+  new GoogleStrategy(
+    {
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: googleCallbackURL
+    },
+    (accessToken, refreshToken, profile, done) => {
+      const primaryEmailEntry = Array.isArray(profile.emails)
+        ? profile.emails.find((entry) => entry.verified) || profile.emails[0]
+        : null;
+      const email = primaryEmailEntry?.value?.toLowerCase();
+
+      if (!email) {
+        return done(null, false, { message: 'Unable to determine a verified email address for this account' });
+      }
+
+      if (!allowedEmails.has(email)) {
+        return done(null, false, { message: 'Email address is not whitelisted for admin access' });
+      }
+
+      return done(null, {
+        email,
+        name: profile.displayName || '',
+        picture: Array.isArray(profile.photos) && profile.photos[0]?.value ? profile.photos[0].value : null
+      });
+    }
+  )
+);
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+const ensureAuthenticated = (req, res, next) => {
+  if (req.isAuthenticated?.() && req.isAuthenticated()) {
+    return next();
+  }
+
+  if (req.accepts('html')) {
+    return res.redirect('/auth/google');
+  }
+
+  return res.status(401).json({ error: 'Unauthorized' });
+};
+
+app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'], prompt: 'select_account' }));
+
+app.get(
+  '/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/auth/unauthorized', failureMessage: true }),
+  (req, res) => {
+    res.redirect('/admin.html');
+  }
+);
+
+app.get('/auth/logout', (req, res, next) => {
+  req.logout((err) => {
+    if (err) return next(err);
+    req.session.destroy((sessionErr) => {
+      if (sessionErr) return next(sessionErr);
+      res.clearCookie('connect.sid');
+      res.redirect('/');
+    });
+  });
+});
+
+app.get('/auth/unauthorized', (req, res) => {
+  res.status(403).send('Your Google account is not authorized for admin access.');
+});
+
+app.get('/auth/status', (req, res) => {
+  if (!req.isAuthenticated?.() || !req.isAuthenticated()) {
+    return res.json({ authenticated: false });
+  }
+
+  const { email, name } = req.user || {};
+  return res.json({ authenticated: true, user: { email, name } });
+});
+
+app.get('/admin.html', ensureAuthenticated, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+app.use(express.static('public'));
 
 // ----- existing read routes -----
 
@@ -121,7 +251,7 @@ ON CONFLICT(field_fk) DO UPDATE SET
   software_tracker=excluded.software_tracker, model_type=excluded.model_type
 `);
 
-app.post('/admin/fields', (req, res) => {
+app.post('/admin/fields', ensureAuthenticated, (req, res) => {
   const it = req.body || {};
   if (!it.FieldID) return res.status(400).send('FieldID is required');
 
@@ -157,7 +287,7 @@ app.post('/admin/fields', (req, res) => {
   catch (e) { console.error(e); res.status(500).send('Failed to save'); }
 });
 
-app.delete('/admin/fields/:fieldId', (req, res) => {
+app.delete('/admin/fields/:fieldId', ensureAuthenticated, (req, res) => {
   const f = db.prepare('SELECT id FROM fields WHERE field_id = ?').get(req.params.fieldId);
   if (!f) return res.status(404).send('Not found');
   db.prepare('DELETE FROM fields WHERE id = ?').run(f.id); // cascades to soil/meta/horizons
