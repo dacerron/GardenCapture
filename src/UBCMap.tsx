@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps } from "./lib/loadGoogleMaps";
+import { awsClient } from "./lib/awsClient";
 
 type Pin = {
   title: string;
@@ -19,18 +20,28 @@ export default function UBCMap({
   openViewer: (path?: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<google.maps.Map | null>(null); // holds the Map instance
+  const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
 
+  //
+  // -------------------------------------------------------------------
+  // FETCH PINS (NOW AWS SIGNED REQUEST)
+  // -------------------------------------------------------------------
+  //
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        const res = await fetch("/pins", { cache: "no-store" });
+        const res = await awsClient.fetch(
+          `${import.meta.env.VITE_API_URL}/pins`,
+          { method: "GET" }
+        );
+
         if (!res.ok) throw new Error(`Pins fetch failed: ${res.status}`);
+
         const data = (await res.json()) as Array<{
           title?: string;
           position?: { lat: number; lng: number };
@@ -39,7 +50,9 @@ export default function UBCMap({
           thumbnail?: string;
           thumbnailAlt?: string;
         }>;
+
         if (cancelled) return;
+
         const nextPins: Pin[] = data
           .filter((p) => p?.position?.lat && p?.position?.lng)
           .map((p) => ({
@@ -50,6 +63,7 @@ export default function UBCMap({
             thumbnail: p.thumbnail ?? "",
             thumbnailAlt: p.thumbnailAlt ?? "",
           }));
+
         setPins(nextPins);
       } catch (err) {
         if (!cancelled) console.error("Failed to load pins", err);
@@ -61,6 +75,11 @@ export default function UBCMap({
     };
   }, []);
 
+  //
+  // -------------------------------------------------------------------
+  // MAP + MARKERS (unchanged)
+  // -------------------------------------------------------------------
+  //
   useEffect(() => {
     let cancelled = false;
 
@@ -78,7 +97,7 @@ export default function UBCMap({
         });
       }
 
-      // Cleanup any previous markers (safe if effect runs multiple times)
+      // Cleanup previous markers
       markersRef.current.forEach((m) => m.setMap(null));
       markersRef.current = [];
 
@@ -90,7 +109,6 @@ export default function UBCMap({
         });
 
         const handleClick = () => {
-          // close previous info window
           if (infoWindowRef.current) {
             infoWindowRef.current.close();
             infoWindowRef.current = null;
