@@ -4,6 +4,9 @@ import { FlyControls } from "./FlyControls";
 import { ScreenSpaceUI } from "./ScreenSpace";
 import { GaussianViewer } from "./GaussianViewer";
 import { WorldMarkers } from "./WorldMarkers";
+import { Skybox } from "./Skybox";
+
+const DEFAULT_SKYBOX_URL = "/citrus_orchard_puresky_4k.hdr"; // local HDR equirectangular sky
 
 export class ThreeApp {
   private container: HTMLElement;
@@ -26,6 +29,9 @@ export class ThreeApp {
 
   // Gaussian splats viewer
   private gaussian: GaussianViewer;
+
+  // Skybox
+  private skybox: Skybox;
 
   // World markers
   private markers: WorldMarkers;
@@ -90,6 +96,10 @@ export class ThreeApp {
     // Gaussian splats viewer
     this.gaussian = new GaussianViewer(this.renderer, this.camera);
 
+    // Skybox
+    this.skybox = new Skybox();
+    this.skybox.setEquirectangular(DEFAULT_SKYBOX_URL);
+
     // World markers
     this.markers = new WorldMarkers();
     this.markers.setMarkers([
@@ -142,6 +152,9 @@ export class ThreeApp {
     // Fly update
     this.controls.update(dt);
 
+    // Skybox (background)
+    this.skybox.render(this.renderer, this.camera);
+
     // Scale world axes based on distance
     if (this.worldAxes) {
       const dist = this.camera.position.length();
@@ -149,13 +162,11 @@ export class ThreeApp {
       this.worldAxes.scale.setScalar(s);
     }
 
-    // Gaussian splats viewer
-    this.gaussian.update();
-
     // World markers first so splats can occlude them 
     this.markers.render(this.renderer, this.camera);
 
     // Gaussians 
+    this.gaussian.update();
     this.gaussian.render();
 
      // screen space UI
@@ -174,6 +185,11 @@ export class ThreeApp {
     if (!this.destroyed) {
       this.camera.position.set(0, 2.5, 5);
     }
+  }
+
+  public async setSkybox(path: string | null | undefined) {
+    if (this.destroyed) return;
+    await this.skybox.setEquirectangular(path);
   }
 
   public setWorldMarkers(markers: Parameters<WorldMarkers["setMarkers"]>[0]) {
@@ -212,6 +228,7 @@ export class ThreeApp {
       }
     }
 
+    this.skybox.dispose();
     this.gaussian.dispose();
     this.markers.dispose();
     this.renderer.dispose();
