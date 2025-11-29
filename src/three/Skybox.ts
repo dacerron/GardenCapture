@@ -1,5 +1,7 @@
 import * as THREE from "three";
-import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader";
+import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader";
+import skyboxVertexShader from "./shaders/skybox.vs?raw";
+import skyboxFragmentShader from "./shaders/skybox.fs?raw";
 
 /**
  * Lightweight skybox renderer that consumes an equirectangular map.
@@ -7,10 +9,11 @@ import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader";
  */
 export class Skybox {
   private scene = new THREE.Scene();
-  private sphere?: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
+  private sphere?: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
+  private material?: THREE.ShaderMaterial;
   private texture?: THREE.Texture;
   private loader = new THREE.TextureLoader();
-  private rgbeLoader = new RGBELoader().setDataType(THREE.HalfFloatType);
+  private hdrLoader = new HDRLoader().setDataType(THREE.HalfFloatType);
   private loadToken = 0;
   private destroyed = false;
 
@@ -30,7 +33,7 @@ export class Skybox {
     const isHdr = /\.hdr$/i.test(url);
     try {
       const tex = isHdr
-        ? await this.rgbeLoader.loadAsync(url)
+        ? await this.hdrLoader.loadAsync(url)
         : await this.loader.loadAsync(url);
       if (this.destroyed || token !== this.loadToken) {
         tex.dispose();
@@ -83,18 +86,16 @@ export class Skybox {
 
     if (!this.sphere) {
       const geom = new THREE.SphereGeometry(1, 64, 48);
-      const mat = new THREE.MeshBasicMaterial({
-        side: THREE.BackSide,
-        depthWrite: false,
-        depthTest: false,
-      });
+      const mat = this.createMaterial();
       this.sphere = new THREE.Mesh(geom, mat);
       this.sphere.frustumCulled = false;
       this.scene.add(this.sphere);
     }
 
-    this.sphere.material.map = tex;
-    this.sphere.material.needsUpdate = true;
+    if (this.material) {
+      this.material.uniforms.map.value = tex;
+      this.material.needsUpdate = true;
+    }
   }
 
   private clearTexture() {
@@ -102,9 +103,29 @@ export class Skybox {
       this.texture.dispose();
       this.texture = undefined;
     }
-    if (this.sphere) {
-      this.sphere.material.map = null;
-      this.sphere.material.needsUpdate = true;
+    if (this.material) {
+      this.material.uniforms.map.value = null;
+      this.material.needsUpdate = true;
     }
+  }
+
+  private createMaterial() {
+    const uniforms = {
+      map: { value: null as THREE.Texture | null },
+      fadeStart: { value: -0.05 }, // y-direction threshold where sky starts to appear
+      fadeEnd: { value: 0.05 }, // y-direction where sky is fully visible
+    };
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms,
+      vertexShader: skyboxVertexShader,
+      fragmentShader: skyboxFragmentShader,
+      side: THREE.BackSide,
+      depthWrite: false,
+      depthTest: false,
+    });
+
+    this.material = mat;
+    return mat;
   }
 }
