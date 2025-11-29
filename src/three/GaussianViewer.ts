@@ -80,19 +80,17 @@ export class GaussianViewer {
     this.currentPath = path;
     const token = ++this.loadToken;
 
-    const uprightQ = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(Math.PI / 4, 0, Math.PI, "XYZ")
-    );
-
     try {
       if (this.destroyed || token !== this.loadToken) return;
       this.viewer.clear?.();
       await this.viewer.addSplatScene(path, {
         position: [0, 0, 0],
         scale: [1, 1, 1],
-        rotation: [uprightQ.x, uprightQ.y, uprightQ.z, uprightQ.w],
+        // Flip 1so it doesn't render upside down.
+        rotation: [1, 0, 0, 0],
         progressiveLoad: false,
       });
+      await this.waitForFrames(60);
     } catch (e) {
       if (this.destroyed || token !== this.loadToken) {
         // Ignore errors from loads that were superseded or canceled by dispose
@@ -107,5 +105,19 @@ export class GaussianViewer {
     this.destroyed = true;
     this.loadToken++;
     this.viewer.dispose();
+  }
+
+  private waitForFrames(count: number) {
+    return new Promise<void>((resolve) => {
+      let remaining = count;
+      const step = () => {
+        if (--remaining <= 0 || this.destroyed) {
+          resolve();
+        } else {
+          requestAnimationFrame(step);
+        }
+      };
+      requestAnimationFrame(step);
+    });
   }
 }

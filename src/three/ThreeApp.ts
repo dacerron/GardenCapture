@@ -5,8 +5,10 @@ import { ScreenSpaceUI } from "./ScreenSpace";
 import { GaussianViewer } from "./GaussianViewer";
 import { WorldMarkers } from "./WorldMarkers";
 import { Skybox } from "./Skybox";
+import { LoadingOverlay } from "./LoadingOverlay";
 
 const DEFAULT_SKYBOX_URL = "/citrus_orchard_puresky_4k.hdr"; // local HDR equirectangular sky
+const DEFAULT_SPLAT_PATH = "/assets/gaussian_splat_data/UBC_Farm_Agricultural.splat";
 
 export class ThreeApp {
   private container: HTMLElement;
@@ -32,6 +34,9 @@ export class ThreeApp {
 
   // Skybox
   private skybox: Skybox;
+
+  // Loading overlay
+  private overlay: LoadingOverlay;
 
   // World markers
   private markers: WorldMarkers;
@@ -66,6 +71,7 @@ export class ThreeApp {
     this.renderer.setClearColor(0x0e1116, 1);
     this.container.appendChild(this.renderer.domElement);
     this.screenUI = new ScreenSpaceUI(this.container);
+    this.overlay = new LoadingOverlay(this.container);
 
     const gl = this.renderer.getContext();
     const scope = globalThis as unknown as WindowOrWorkerGlobalScope;
@@ -117,6 +123,9 @@ export class ThreeApp {
     // sizing
     this.resizeToContainer();
     this.observeResize();
+
+    // test
+    // this.setGaussianPath(DEFAULT_SPLAT_PATH);
 
     // animate
     this.renderer.setAnimationLoop(this.tick);
@@ -181,9 +190,14 @@ export class ThreeApp {
 
   public async setGaussianPath(path: string) {
     if (this.destroyed) return;
-    await this.gaussian.setPath(path);
-    if (!this.destroyed) {
-      this.camera.position.set(0, 2.5, 5);
+    this.overlay.show();
+    try {
+      await this.gaussian.setPath(path);
+      if (!this.destroyed) {
+        this.camera.position.set(0, 2.5, 5);
+      }
+    } finally {
+      if (!this.destroyed) this.overlay.hide();
     }
   }
 
@@ -230,6 +244,7 @@ export class ThreeApp {
 
     this.skybox.dispose();
     this.gaussian.dispose();
+    this.overlay.dispose();
     this.markers.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement === this.container) {
