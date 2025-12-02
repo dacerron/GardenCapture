@@ -104,13 +104,19 @@ export class ThreeApp {
 
     // Skybox
     this.skybox = new Skybox();
-    this.skybox.setEquirectangular(DEFAULT_SKYBOX_URL);
+    void this.skybox
+      .setEquirectangular(DEFAULT_SKYBOX_URL)
+      .then(() => {
+        if (this.markers) {
+          this.markers.setEnvironmentMap(this.skybox.getEnvironmentMap());
+        }
+      });
 
     // World markers
     this.markers = new WorldMarkers();
-    this.markers.setMarkers([
+    this.markers.setMarkers([ //temp test marker
       {
-        position: new THREE.Vector3(0, 5, 0),
+        position: new THREE.Vector3(2, 1, 0),
         color: "#ff4444",
         radius: 0.2,
       },
@@ -136,23 +142,11 @@ export class ThreeApp {
   // MAIN LOOP
   // ------------------
   private tick = () => {
-    const dt = Math.max(0.0001, Math.min(0.1, this.clock.getDelta()));
-    const instFps = 1 / dt;
-    this.fps =
-      this.fps === 0
-        ? instFps
-        : THREE.MathUtils.lerp(this.fps, instFps, 0.1); // smooth a bit
+    //update delta time and fps
+    const dt = this.updateFPS()
 
-    // DPR changes
-    const dpr = window.devicePixelRatio || 1;
-    if (Math.abs(dpr - this.prevDpr) > 0.001) {
-      this.prevDpr = dpr;
-      const { clientWidth: w, clientHeight: h } = this.container;
-      this.renderer.setPixelRatio(Math.min(dpr, 2));
-      this.renderer.setSize(Math.max(1, w), Math.max(1, h), false);
-      this.camera.aspect = (w || 1) / (h || 1);
-      this.camera.updateProjectionMatrix();
-    }
+    // DPR changes (if any)
+    this.updateDPR()
 
     // clear frame (color + depth)
     this.renderer.setRenderTarget(null);
@@ -161,7 +155,7 @@ export class ThreeApp {
     // Fly update
     this.controls.update(dt);
 
-    // Skybox (background)
+    // render Skybox
     this.skybox.render(this.renderer, this.camera);
 
     // Scale world axes based on distance
@@ -188,11 +182,17 @@ export class ThreeApp {
     this.renderer.render(this.worldAxesScene, this.camera);
   };
 
+
+  // -------------------------------------------------------------------------
+  //PUBLIC METHODS-------------------------------------------------------------------------
+  //-------------------------------------------------------------------------
+
   public async setGaussianPath(path: string) {
     if (this.destroyed) return;
     this.overlay.show();
     try {
-      await this.gaussian.setPath(path);
+      await this.gaussian.setPath("assets/gaussian_splat_data/UBC_Farm_Agricultural.splat"); //temp
+      //await this.gaussian.setPath(path);
       if (!this.destroyed) {
         this.camera.position.set(0, 2.5, 5);
       }
@@ -204,11 +204,16 @@ export class ThreeApp {
   public async setSkybox(path: string | null | undefined) {
     if (this.destroyed) return;
     await this.skybox.setEquirectangular(path);
+    this.markers.setEnvironmentMap(this.skybox.getEnvironmentMap());
   }
 
   public setWorldMarkers(markers: Parameters<WorldMarkers["setMarkers"]>[0]) {
     this.markers.setMarkers(markers);
   }
+
+  // -------------------------------------------------------------------------
+  //PRIVATE METHODS-------------------------------------------------------------------------
+  //-------------------------------------------------------------------------
 
   private resizeToContainer = () => {
     const w = Math.max(1, this.container.clientWidth);
@@ -222,6 +227,29 @@ export class ThreeApp {
   private observeResize() {
     this.resizeObs = new ResizeObserver(() => this.resizeToContainer());
     this.resizeObs?.observe(this.container);
+  }
+
+  private updateDPR() {
+    const dpr = window.devicePixelRatio || 1;
+    if (Math.abs(dpr - this.prevDpr) > 0.001) {
+      this.prevDpr = dpr;
+      const { clientWidth: w, clientHeight: h } = this.container;
+      this.renderer.setPixelRatio(Math.min(dpr, 2));
+      this.renderer.setSize(Math.max(1, w), Math.max(1, h), false);
+      this.camera.aspect = (w || 1) / (h || 1);
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  private updateFPS(): number {
+    const dt = Math.max(0.0001, Math.min(0.1, this.clock.getDelta()));
+    const instFps = 1 / dt;
+    this.fps =
+      this.fps === 0
+        ? instFps
+        : THREE.MathUtils.lerp(this.fps, instFps, 0.1); // smooth a bit
+      
+    return dt;
   }
 
   dispose() {

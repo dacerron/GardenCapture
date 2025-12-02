@@ -48,6 +48,13 @@ export class Skybox {
   }
 
   /**
+   * Get the loaded environment map (equirectangular). Useful for IBL on other objects.
+   */
+  getEnvironmentMap(): THREE.Texture | null {
+    return this.texture ?? null;
+  }
+
+  /**
    * Render the skybox as a background. Call once per frame before other content.
    */
   render(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera) {
@@ -112,8 +119,8 @@ export class Skybox {
   private createMaterial() {
     const uniforms = {
       map: { value: null as THREE.Texture | null },
-      fadeStart: { value: -0.05 }, // y-direction threshold where sky starts to appear
-      fadeEnd: { value: 0.05 }, // y-direction where sky is fully visible
+      fadeStart: { value: -0.4 }, // y-direction threshold where sky starts to appear
+      fadeEnd: { value: -0.2 }, // y-direction where sky is fully visible
     };
 
     const mat = new THREE.ShaderMaterial({
