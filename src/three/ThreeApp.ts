@@ -32,6 +32,10 @@ export class ThreeApp {
   // Gaussian splats viewer
   private gaussian: GaussianViewer;
 
+  // Picking
+  private raycaster = new THREE.Raycaster();
+  private pointer = new THREE.Vector2();
+
   // Skybox
   private skybox: Skybox;
 
@@ -98,6 +102,8 @@ export class ThreeApp {
 
     // Fly controls
     this.controls = new FlyControls(this.camera, this.renderer.domElement);
+    this.screenUI.setSpeedChangeHandler((v) => this.controls.setFlySpeed(v));
+    this.screenUI.setSpeed(this.controls.getFlySpeed());
 
     // Gaussian splats viewer
     this.gaussian = new GaussianViewer(this.renderer, this.camera);
@@ -114,13 +120,17 @@ export class ThreeApp {
 
     // World markers
     this.markers = new WorldMarkers();
+    const markerTexture = new THREE.TextureLoader().load("assets/icons/markerIcon1.png");
     this.markers.setMarkers([ //temp test marker
       {
-        position: new THREE.Vector3(2, 1, 0),
-        color: "#ff4444",
-        radius: 0.2,
+        position: new THREE.Vector3(-0.20, -0.74, -0.15),
+        color: "#FFFFFF",
+        radius: 0.1,
+        texture: markerTexture,
+        label: "Sample marker. There should be some info about this marker displayed here.",
       },
     ]);
+    this.renderer.domElement.addEventListener("click", this.handleClick);
 
     // World axes setup
     this.worldAxes = new THREE.AxesHelper(1);
@@ -191,7 +201,7 @@ export class ThreeApp {
     if (this.destroyed) return;
     this.overlay.show();
     try {
-      await this.gaussian.setPath("assets/gaussian_splat_data/UBC_Farm_Agricultural.splat"); //temp
+      await this.gaussian.setPath(DEFAULT_SPLAT_PATH); //temp
       //await this.gaussian.setPath(path);
       if (!this.destroyed) {
         this.camera.position.set(0, 2.5, 5);
@@ -252,10 +262,33 @@ export class ThreeApp {
     return dt;
   }
 
+  private handleClick = (event: MouseEvent) => {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.pointer.set(x, y);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+
+    const hits = this.raycaster.intersectObjects([...this.markers.getPickableObjects()], false);
+    if (hits.length === 0) return;
+
+    const hitObj = hits[0].object as THREE.Sprite;
+
+    // If clicking the label itself, close it 
+    if (this.markers.getSprites().includes(hitObj) === false) {
+      this.markers.removeLabel();
+      return;
+    }
+
+    // Otherwise, toggle the marker's label
+    this.markers.toggleLabelForSprite(hitObj, this.camera);
+  };
+
   dispose() {
     this.destroyed = true;
     this.renderer.setAnimationLoop(null);
     this.resizeObs?.disconnect();
+    this.renderer.domElement.removeEventListener("click", this.handleClick);
 
     // Dispose controls (removes input listeners)
     this.controls.dispose();
@@ -272,6 +305,7 @@ export class ThreeApp {
 
     this.skybox.dispose();
     this.gaussian.dispose();
+    this.screenUI.dispose();
     this.overlay.dispose();
     this.markers.dispose();
     this.renderer.dispose();
