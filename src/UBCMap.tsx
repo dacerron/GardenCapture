@@ -36,6 +36,8 @@ export default function UBCMap({
 
     (async () => {
       try {
+        console.log("Fetching pins..."); // debug
+
         const res = await awsClient.fetch(
           `${import.meta.env.VITE_API_URL}/pins`,
           { method: "GET" }
@@ -66,6 +68,14 @@ export default function UBCMap({
             thumbnailAlt: p.thumbnailAlt ?? "",
             markers: p.markers ?? [],
           }));
+
+        console.log(
+          "Pins loaded successfully",
+          nextPins.map((pin) => ({
+            title: pin.title,
+            markers: pin.markers ?? [],
+          }))
+        ); // debug
 
         setPins(nextPins);
       } catch (err) {
