@@ -25,13 +25,15 @@ export default function App() {
       </section>
 
       <section style={{ padding: "0 1rem 2rem" }}>
-        <UBCMap openViewer={openViewer} />
+        <div className="contentWidth">
+          <UBCMap openViewer={openViewer} />
+        </div>
       </section>
 
       {/* Info section */}
       <section className="mapInfo">
         <div
-          className="mapInfoInner"
+          className="contentWidth mapInfoInner"
           style={{
             display: "grid",
             gridTemplateColumns: "minmax(200px, 260px) 1fr",
@@ -50,19 +52,17 @@ export default function App() {
                 What are Radiance Fields?
               </a>
               <a href="#NextSteps" className="btn btn-sec-hov">
-                What are the Next Steps?
+                Next Steps
               </a>
             </div>
           </aside>
 
           {/* Main content */}
-          <article>
-            <h2 style={{ marginTop: 0 }}>All About the Web of Virtual Soils</h2>
-
+          <article className="floatSection">
             {/* WHY */}
             <h2 id="TheWhy">Why Virtual Soils?</h2>
 
-            <figure style={{ margin: "1rem 0" }}>
+            <figure className="float-right">
               {}
               <img
                 src="/assets/images/Canada-Soil-Map.jpg"
@@ -104,7 +104,7 @@ export default function App() {
               cannot explore beyond the frame.
             </p>
 
-            <figure style={{ margin: "1rem 0" }}>
+            <figure className="float-left">
               <img
                 src="/assets/images/Soil-Monolith.jpg"
                 alt="Soil monolith photograph"
@@ -136,7 +136,7 @@ export default function App() {
               locations, and complex logistics required to move large groups of people around.
             </p>
 
-            <figure style={{ margin: "1rem 0" }}>
+            <figure className="float-right">
               <img
                 src="/assets/images/Radiance-Fields-Demo.jpg"
                 alt="Radiance fields demo in VRChat"
@@ -194,7 +194,7 @@ export default function App() {
               What are Radiance Fields and Gaussian Splats?
             </h2>
 
-            <figure style={{ margin: "1rem 0" }}>
+            <figure className="float-left">
               <img
                 src="/assets/images/Gaussian-Splat.jpg"
                 alt="3D Gaussian splats example"
@@ -295,7 +295,7 @@ export default function App() {
               Project Next Steps
             </h2>
 
-            <figure style={{ margin: "1rem 0" }}>
+            <figure className="float-right">
               <img
                 src="assets/images/Capture-Aids.jpg"
                 alt="Capture aids with AprilTags"
