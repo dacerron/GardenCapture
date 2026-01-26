@@ -2,7 +2,6 @@
 import * as THREE from "three";
 import * as GaussianSplats3D from "@mkkellogg/gaussian-splats-3d";
 
-// Minimal viewer interface so we don't rely on `any`
 interface GSViewer {
   addSplatScene(
     path: string,
@@ -32,7 +31,6 @@ type GSViewerCtor = new (opts: {
   logLevel?: number;
 }) => GSViewer;
 
-// Safely pick the class/enum off the imported module (no `any`)
 const ViewerClass: GSViewerCtor = (
   GaussianSplats3D as unknown as {
     Viewer: GSViewerCtor;
@@ -73,7 +71,7 @@ export class GaussianViewer {
     this.viewer.render();
   }
 
-  async setPath(path: string) {
+  async loadScene(path: string) {
     if (!path) return;
     if (this.destroyed) return;
     if (this.currentPath === path) return;
@@ -97,7 +95,7 @@ export class GaussianViewer {
         console.debug("Skipped load error from disposed GaussianViewer:", e);
         return;
       }
-      console.error("Failed to load ksplat via setPath:", e);
+      console.error("Failed to load splat via setPath:", e);
     }
   }
 

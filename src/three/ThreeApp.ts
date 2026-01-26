@@ -6,52 +6,49 @@ import { GaussianViewer } from "./GaussianViewer";
 import { WorldMarkers } from "./WorldMarkers";
 import { Skybox } from "./Skybox";
 import { LoadingOverlay } from "./LoadingOverlay";
+import { MarkerPickingController } from "./Interaction";
 
-const DEFAULT_SKYBOX_URL = "/citrus_orchard_puresky_4k.hdr"; // local HDR equirectangular sky
+
+const DEFAULT_SKYBOX_URL = "/citrus_orchard_puresky_4k.hdr"; 
+
+//we can change this per scene if we wanted to..
 const DEFAULT_PLAY_AREA_BOUNDS = new THREE.Box3(
   new THREE.Vector3(-25, -5, -25),
   new THREE.Vector3(25, 15, 25)
 );
 
-export class ThreeApp {
-  private container: HTMLElement;
-  private renderer: THREE.WebGLRenderer;
-  private camera: THREE.PerspectiveCamera;
 
+export class ThreeApp {
+  // Core
+  private container: HTMLElement;
+  private renderer!: THREE.WebGLRenderer;
+  private camera!: THREE.PerspectiveCamera;
+
+  // Loop state
   private clock = new THREE.Clock();
   private fps = 0;
+  private destroyed = false;
 
+  // Resize
   private resizeObs?: ResizeObserver;
   private prevDpr = window.devicePixelRatio || 1;
 
-  private destroyed = false;
-
-  // Fly controls
-  private controls: FlyControls;
-
-  //screen space ui
-  private screenUI: ScreenSpaceUI;
-
-  // Gaussian splats viewer
-  private gaussian: GaussianViewer;
+  // Systems
+  private controls!: FlyControls;
+  private screenUI!: ScreenSpaceUI;
+  private gaussian!: GaussianViewer;
+  private skybox!: Skybox;
+  private overlay!: LoadingOverlay;
+  private markers!: WorldMarkers;
 
   // Picking
-  private raycaster = new THREE.Raycaster();
-  private pointer = new THREE.Vector2();
+  private markerPicking!: MarkerPickingController;
 
-  // Skybox
-  private skybox: Skybox;
-
-  // Loading overlay
-  private overlay: LoadingOverlay;
-
-  // World markers
-  private markers: WorldMarkers;
-
-  // axes
+  // Debug
   private worldAxesScene = new THREE.Scene();
   private worldAxes?: THREE.AxesHelper;
   private playAreaBounds: THREE.Box3 | null = null;
+
 
   // ------------------
   // CONSTRUCTOR
@@ -59,7 +56,24 @@ export class ThreeApp {
   constructor(container: HTMLElement) {
     this.container = container;
 
-    // renderer
+    //systems
+    this.initRenderer();
+    this.initCamera();
+    this.initGaussianViewer(); //needs cam,renderer
+
+    this.initUI();
+    this.initControls();
+    this.initScene();
+
+    // sizing
+    this.resizeToContainer(false);
+    this.observeResize();
+
+    //start
+    this.renderer.setAnimationLoop(this.tick);
+  }
+
+  private initRenderer() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     Object.assign(this.renderer.domElement.style, {
       width: "100%",
@@ -78,42 +92,30 @@ export class ThreeApp {
 
     this.renderer.setClearColor(0x0e1116, 1);
     this.container.appendChild(this.renderer.domElement);
+  }
+
+  private initGaussianViewer() {
+    this.gaussian = new GaussianViewer(this.renderer, this.camera);
+  }
+
+  private initUI() {
     this.screenUI = new ScreenSpaceUI(this.container);
     this.overlay = new LoadingOverlay(this.container);
+  }
 
-    const gl = this.renderer.getContext();
-    const scope = globalThis as unknown as WindowOrWorkerGlobalScope;
-    const coi = scope.crossOriginIsolated ?? false;
-    const hasSharedArrayBuffer = typeof SharedArrayBuffer !== "undefined";
-    const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator;
-    console.info(
-      "WebGL2:",
-      gl instanceof WebGL2RenderingContext,
-      "| COI:",
-      coi,
-      "| SAB:",
-      hasSharedArrayBuffer,
-      "| WebGPU:",
-      hasWebGPU
-    );
-    console.info(
-      "Gaussian splats running with CPU sort (GPU sort not supported by current library build)."
-    );
-
-    // camera
+  private initCamera() {
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
     this.camera.position.set(0, 2.5, 5);
+  }
 
-    // Fly controls
+  private initControls() {
     this.controls = new FlyControls(this.camera, this.renderer.domElement);
     this.setPlayAreaBounds(DEFAULT_PLAY_AREA_BOUNDS);
     this.screenUI.setSpeedChangeHandler((v) => this.controls.setFlySpeed(v));
     this.screenUI.setSpeed(this.controls.getFlySpeed());
+  }
 
-    // Gaussian splats viewer
-    this.gaussian = new GaussianViewer(this.renderer, this.camera);
-
-    // Skybox
+  private initSkybox() {
     this.skybox = new Skybox();
     void this.skybox
       .setEquirectangular(DEFAULT_SKYBOX_URL)
@@ -122,21 +124,19 @@ export class ThreeApp {
           this.markers.setEnvironmentMap(this.skybox.getEnvironmentMap());
         }
       });
+  }
 
-    // World markers
+  private initScene() {
     this.markers = new WorldMarkers();
-    this.renderer.domElement.addEventListener("click", this.handleClick);
-
-    // World axes setup
+    this.markerPicking = new MarkerPickingController({
+      dom: this.renderer.domElement,
+      camera: this.camera,
+      markers: this.markers,
+      moveThresholdPx: 6,
+    });
+    this.initSkybox();
     this.worldAxes = new THREE.AxesHelper(1);
     this.worldAxesScene.add(this.worldAxes);
-
-    // sizing
-    this.resizeToContainer();
-    this.observeResize();
-
-    // animate
-    this.renderer.setAnimationLoop(this.tick);
   }
 
 
@@ -144,56 +144,47 @@ export class ThreeApp {
   // MAIN LOOP
   // ------------------
   private tick = () => {
-    //update delta time and fps
-    const dt = this.updateFPS()
+    const dt = this.updateFPS();
+    this.resizeToContainer();
+    this.beginFrame();
+    this.update(dt);
+    this.renderFrame();
+    this.renderDebug();
+  };
 
-    // DPR changes (if any)
-    this.updateDPR()
-
-    // clear frame (color + depth)
+  private beginFrame() {
     this.renderer.setRenderTarget(null);
     this.renderer.clear(true, true, true);
+  }
 
-    // Fly update
+  private update(dt: number) {
     this.controls.update(dt);
-
-    // render Skybox
-    this.skybox.render(this.renderer, this.camera);
-
-    // Scale world axes based on distance
-    if (this.worldAxes) {
-      const dist = this.camera.position.length();
-      const s = THREE.MathUtils.clamp(dist * 0.05, 0.5, 10);
-      this.worldAxes.scale.setScalar(s);
-    }
-
-    // World markers first so splats can occlude them 
-    this.markers.render(this.renderer, this.camera);
-
-    // Gaussians 
     this.gaussian.update();
-    this.gaussian.render();
-
-     // screen space UI
     this.screenUI.setPlayerWorldPosition(this.camera.position);
     this.screenUI.setFps(this.fps);
     this.screenUI.update();
+  }
 
-    // world axes
+  private renderFrame() {
+    this.skybox.render(this.renderer, this.camera);
+    this.markers.render(this.renderer, this.camera);
+    this.gaussian.render();
+  }
+
+  private renderDebug() {
     this.renderer.clearDepth();
     this.renderer.render(this.worldAxesScene, this.camera);
-  };
-
+  }
 
   // -------------------------------------------------------------------------
   //PUBLIC METHODS-------------------------------------------------------------------------
   //-------------------------------------------------------------------------
 
-  public async setGaussianPath(path: string) {
+  public async loadGaussianScene(path: string) {
     if (this.destroyed) return;
     this.overlay.show();
     try {
-      await this.gaussian.setPath(path);
+      await this.gaussian.loadScene(path);
       if (!this.destroyed) {
         this.camera.position.set(0, 2.5, 5);
       }
@@ -202,6 +193,7 @@ export class ThreeApp {
     }
   }
 
+  //we will use this later probably
   public async setSkybox(path: string | null | undefined) {
     if (this.destroyed) return;
     await this.skybox.setEquirectangular(path);
@@ -218,33 +210,27 @@ export class ThreeApp {
   }
 
   // -------------------------------------------------------------------------
-  //PRIVATE METHODS-------------------------------------------------------------------------
+  //HELPER METHODS-------------------------------------------------------------------------
   //-------------------------------------------------------------------------
 
-  private resizeToContainer = () => {
+  private resizeToContainer(force = false) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (!force && Math.abs(dpr - this.prevDpr) < 0.001) return;
+
+    this.prevDpr = dpr;
+
     const w = Math.max(1, this.container.clientWidth);
     const h = Math.max(1, this.container.clientHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+    this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-  };
-
-  private observeResize() {
-    this.resizeObs = new ResizeObserver(() => this.resizeToContainer());
-    this.resizeObs?.observe(this.container);
   }
 
-  private updateDPR() {
-    const dpr = window.devicePixelRatio || 1;
-    if (Math.abs(dpr - this.prevDpr) > 0.001) {
-      this.prevDpr = dpr;
-      const { clientWidth: w, clientHeight: h } = this.container;
-      this.renderer.setPixelRatio(Math.min(dpr, 2));
-      this.renderer.setSize(Math.max(1, w), Math.max(1, h), false);
-      this.camera.aspect = (w || 1) / (h || 1);
-      this.camera.updateProjectionMatrix();
-    }
+  private observeResize() {
+    this.resizeObs = new ResizeObserver(() => this.resizeToContainer(true));
+    this.resizeObs?.observe(this.container);
   }
 
   private updateFPS(): number {
@@ -258,35 +244,13 @@ export class ThreeApp {
     return dt;
   }
 
-  private handleClick = (event: MouseEvent) => {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    this.pointer.set(x, y);
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-
-    const hits = this.raycaster.intersectObjects([...this.markers.getPickableObjects()], false);
-    if (hits.length === 0) return;
-
-    const hitObj = hits[0].object as THREE.Sprite;
-
-    // If clicking the label itself, close it 
-    if (this.markers.getSprites().includes(hitObj) === false) {
-      this.markers.removeLabel();
-      return;
-    }
-
-    // Otherwise, toggle the marker's label
-    this.markers.toggleLabelForSprite(hitObj, this.camera);
-  };
-
   dispose() {
     this.destroyed = true;
     this.renderer.setAnimationLoop(null);
     this.resizeObs?.disconnect();
-    this.renderer.domElement.removeEventListener("click", this.handleClick);
+    this.markerPicking.dispose();
 
-    // Dispose controls (removes input listeners)
+    // Dispose controls
     this.controls.dispose();
 
     if (this.worldAxes) {

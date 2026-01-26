@@ -8,7 +8,7 @@ import "./index.css";
 function hasSetGaussianPath(
   o: unknown
 ): o is { setGaussianPath: (path: string) => void | Promise<void> } {
-  return !!o && typeof o === "object" && "setGaussianPath" in o;
+  return !!o && typeof o === "object" && "loadGaussianScene" in o;
 }
 
 type MarkerPayload = {
@@ -56,7 +56,7 @@ export default function Viewer() {
         ? raw
         : new URL(raw, window.location.href).href;
 
-      app.setGaussianPath(resolved);
+      app.loadGaussianScene(resolved);
     }
 
     if (markerParam !== null) {
