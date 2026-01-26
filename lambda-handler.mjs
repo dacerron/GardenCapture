@@ -12,6 +12,70 @@ const ddb = DynamoDBDocumentClient.from(
 );
 const TABLE = "eml_fields";
 
+const unwrapAttributeValue = (attr) => {
+  if (attr === null || attr === undefined) return undefined;
+  if (Array.isArray(attr)) return attr.map(unwrapAttributeValue);
+  if (typeof attr !== "object") return attr;
+  if ("S" in attr) return attr.S;
+  if ("N" in attr) return Number(attr.N);
+  if ("BOOL" in attr) return attr.BOOL;
+  if ("NULL" in attr) return null;
+  if ("L" in attr && Array.isArray(attr.L)) {
+    return attr.L.map(unwrapAttributeValue);
+  }
+  if ("M" in attr && attr.M && typeof attr.M === "object") {
+    return Object.fromEntries(
+      Object.entries(attr.M).map(([key, value]) => [
+        key,
+        unwrapAttributeValue(value)
+      ])
+    );
+  }
+  return attr;
+};
+
+const toNumber = (value) => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+const toStringValue = (value) =>
+  typeof value === "string" ? value : undefined;
+
+const parseMarkers = (raw) => {
+  const normalized = unwrapAttributeValue(raw);
+  if (!Array.isArray(normalized)) return [];
+
+  return normalized
+    .map((entry) => {
+      if (!Array.isArray(entry) || entry.length < 4) return null;
+      const [iconRaw, scaleRaw, positionRaw, textRaw] = entry;
+      if (!Array.isArray(positionRaw) || positionRaw.length < 3) return null;
+
+      const coords = positionRaw
+        .slice(0, 3)
+        .map((value) => toNumber(value));
+      if (coords.some((val) => typeof val !== "number")) return null;
+
+      const scale = toNumber(scaleRaw);
+      return {
+        icon: toStringValue(iconRaw) ?? "",
+        scale: scale ?? undefined,
+        position: {
+          x: coords[0],
+          y: coords[1],
+          z: coords[2]
+        },
+        text: toStringValue(textRaw) ?? ""
+      };
+    })
+    .filter(Boolean);
+};
+
 // --- three simple handlers ---
 
 async function getPins() {
@@ -20,14 +84,19 @@ async function getPins() {
     .filter(i => ["TestA", "TestB", "TestC"].includes(String(i.FieldID)))
     .map(i => ({
       title: i.Name,
-      position: { lat: Number(i.Latitude), lng: Number(i.Longitude) },
+      position: {
+        lat: Number(i.Latitude),
+        lng: Number(i.Longitude)
+      },
       path: i.File,
       description: i.Description,
       thumbnail: i.Thumbnail,
-      thumbnailAlt: i.ThumbnailAlt
-    }));
-}
+      thumbnailAlt: i.ThumbnailAlt,
 
+      markers: parseMarkers(i.markers)
+    }));
+  }
+ 
 async function getFields() {
   const data = await ddb.send(new ScanCommand({ TableName: TABLE }));
   return data.Items || [];

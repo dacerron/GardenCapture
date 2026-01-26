@@ -4,6 +4,11 @@ import { FlyControls } from "./FlyControls";
 import { ScreenSpaceUI } from "./ScreenSpace";
 import { GaussianViewer } from "./GaussianViewer";
 import { WorldMarkers } from "./WorldMarkers";
+import { Skybox } from "./Skybox";
+import { LoadingOverlay } from "./LoadingOverlay";
+
+const DEFAULT_SKYBOX_URL = "/citrus_orchard_puresky_4k.hdr"; // local HDR equirectangular sky
+const DEFAULT_SPLAT_PATH = "/assets/gaussian_splat_data/UBC_Farm_Agricultural.splat";
 
 export class ThreeApp {
   private container: HTMLElement;
@@ -26,6 +31,16 @@ export class ThreeApp {
 
   // Gaussian splats viewer
   private gaussian: GaussianViewer;
+
+  // Picking
+  private raycaster = new THREE.Raycaster();
+  private pointer = new THREE.Vector2();
+
+  // Skybox
+  private skybox: Skybox;
+
+  // Loading overlay
+  private overlay: LoadingOverlay;
 
   // World markers
   private markers: WorldMarkers;
@@ -60,6 +75,7 @@ export class ThreeApp {
     this.renderer.setClearColor(0x0e1116, 1);
     this.container.appendChild(this.renderer.domElement);
     this.screenUI = new ScreenSpaceUI(this.container);
+    this.overlay = new LoadingOverlay(this.container);
 
     const gl = this.renderer.getContext();
     const scope = globalThis as unknown as WindowOrWorkerGlobalScope;
@@ -86,19 +102,25 @@ export class ThreeApp {
 
     // Fly controls
     this.controls = new FlyControls(this.camera, this.renderer.domElement);
+    this.screenUI.setSpeedChangeHandler((v) => this.controls.setFlySpeed(v));
+    this.screenUI.setSpeed(this.controls.getFlySpeed());
 
     // Gaussian splats viewer
     this.gaussian = new GaussianViewer(this.renderer, this.camera);
 
+    // Skybox
+    this.skybox = new Skybox();
+    void this.skybox
+      .setEquirectangular(DEFAULT_SKYBOX_URL)
+      .then(() => {
+        if (this.markers) {
+          this.markers.setEnvironmentMap(this.skybox.getEnvironmentMap());
+        }
+      });
+
     // World markers
     this.markers = new WorldMarkers();
-    this.markers.setMarkers([
-      {
-        position: new THREE.Vector3(0, 5, 0),
-        color: "#ff4444",
-        radius: 0.2,
-      },
-    ]);
+    this.renderer.domElement.addEventListener("click", this.handleClick);
 
     // World axes setup
     this.worldAxes = new THREE.AxesHelper(1);
@@ -117,23 +139,11 @@ export class ThreeApp {
   // MAIN LOOP
   // ------------------
   private tick = () => {
-    const dt = Math.max(0.0001, Math.min(0.1, this.clock.getDelta()));
-    const instFps = 1 / dt;
-    this.fps =
-      this.fps === 0
-        ? instFps
-        : THREE.MathUtils.lerp(this.fps, instFps, 0.1); // smooth a bit
+    //update delta time and fps
+    const dt = this.updateFPS()
 
-    // DPR changes
-    const dpr = window.devicePixelRatio || 1;
-    if (Math.abs(dpr - this.prevDpr) > 0.001) {
-      this.prevDpr = dpr;
-      const { clientWidth: w, clientHeight: h } = this.container;
-      this.renderer.setPixelRatio(Math.min(dpr, 2));
-      this.renderer.setSize(Math.max(1, w), Math.max(1, h), false);
-      this.camera.aspect = (w || 1) / (h || 1);
-      this.camera.updateProjectionMatrix();
-    }
+    // DPR changes (if any)
+    this.updateDPR()
 
     // clear frame (color + depth)
     this.renderer.setRenderTarget(null);
@@ -142,6 +152,9 @@ export class ThreeApp {
     // Fly update
     this.controls.update(dt);
 
+    // render Skybox
+    this.skybox.render(this.renderer, this.camera);
+
     // Scale world axes based on distance
     if (this.worldAxes) {
       const dist = this.camera.position.length();
@@ -149,13 +162,11 @@ export class ThreeApp {
       this.worldAxes.scale.setScalar(s);
     }
 
-    // Gaussian splats viewer
-    this.gaussian.update();
-
     // World markers first so splats can occlude them 
     this.markers.render(this.renderer, this.camera);
 
     // Gaussians 
+    this.gaussian.update();
     this.gaussian.render();
 
      // screen space UI
@@ -168,17 +179,38 @@ export class ThreeApp {
     this.renderer.render(this.worldAxesScene, this.camera);
   };
 
+
+  // -------------------------------------------------------------------------
+  //PUBLIC METHODS-------------------------------------------------------------------------
+  //-------------------------------------------------------------------------
+
   public async setGaussianPath(path: string) {
     if (this.destroyed) return;
-    await this.gaussian.setPath(path);
-    if (!this.destroyed) {
-      this.camera.position.set(0, 2.5, 5);
+    this.overlay.show();
+    try {
+      //await this.gaussian.setPath(DEFAULT_SPLAT_PATH); //temp
+      await this.gaussian.setPath(path);
+      if (!this.destroyed) {
+        this.camera.position.set(0, 2.5, 5);
+      }
+    } finally {
+      if (!this.destroyed) this.overlay.hide();
     }
+  }
+
+  public async setSkybox(path: string | null | undefined) {
+    if (this.destroyed) return;
+    await this.skybox.setEquirectangular(path);
+    this.markers.setEnvironmentMap(this.skybox.getEnvironmentMap());
   }
 
   public setWorldMarkers(markers: Parameters<WorldMarkers["setMarkers"]>[0]) {
     this.markers.setMarkers(markers);
   }
+
+  // -------------------------------------------------------------------------
+  //PRIVATE METHODS-------------------------------------------------------------------------
+  //-------------------------------------------------------------------------
 
   private resizeToContainer = () => {
     const w = Math.max(1, this.container.clientWidth);
@@ -194,10 +226,56 @@ export class ThreeApp {
     this.resizeObs?.observe(this.container);
   }
 
+  private updateDPR() {
+    const dpr = window.devicePixelRatio || 1;
+    if (Math.abs(dpr - this.prevDpr) > 0.001) {
+      this.prevDpr = dpr;
+      const { clientWidth: w, clientHeight: h } = this.container;
+      this.renderer.setPixelRatio(Math.min(dpr, 2));
+      this.renderer.setSize(Math.max(1, w), Math.max(1, h), false);
+      this.camera.aspect = (w || 1) / (h || 1);
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  private updateFPS(): number {
+    const dt = Math.max(0.0001, Math.min(0.1, this.clock.getDelta()));
+    const instFps = 1 / dt;
+    this.fps =
+      this.fps === 0
+        ? instFps
+        : THREE.MathUtils.lerp(this.fps, instFps, 0.1); // smooth a bit
+      
+    return dt;
+  }
+
+  private handleClick = (event: MouseEvent) => {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.pointer.set(x, y);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+
+    const hits = this.raycaster.intersectObjects([...this.markers.getPickableObjects()], false);
+    if (hits.length === 0) return;
+
+    const hitObj = hits[0].object as THREE.Sprite;
+
+    // If clicking the label itself, close it 
+    if (this.markers.getSprites().includes(hitObj) === false) {
+      this.markers.removeLabel();
+      return;
+    }
+
+    // Otherwise, toggle the marker's label
+    this.markers.toggleLabelForSprite(hitObj, this.camera);
+  };
+
   dispose() {
     this.destroyed = true;
     this.renderer.setAnimationLoop(null);
     this.resizeObs?.disconnect();
+    this.renderer.domElement.removeEventListener("click", this.handleClick);
 
     // Dispose controls (removes input listeners)
     this.controls.dispose();
@@ -212,7 +290,10 @@ export class ThreeApp {
       }
     }
 
+    this.skybox.dispose();
     this.gaussian.dispose();
+    this.screenUI.dispose();
+    this.overlay.dispose();
     this.markers.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement === this.container) {

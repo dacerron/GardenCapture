@@ -9,6 +9,7 @@ type Pin = {
   description: string;
   thumbnail: string;
   thumbnailAlt: string;
+  markers?: Array<Record<string, unknown>>;
 };
 
 const placeholderImage =
@@ -17,7 +18,7 @@ const placeholderImage =
 export default function UBCMap({
   openViewer,
 }: {
-  openViewer: (path?: string) => void;
+  openViewer: (path?: string, markers?: Array<Record<string, unknown>>) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -35,6 +36,8 @@ export default function UBCMap({
 
     (async () => {
       try {
+        console.log("Fetching pins..."); // debug
+
         const res = await awsClient.fetch(
           `${import.meta.env.VITE_API_URL}/pins`,
           { method: "GET" }
@@ -49,6 +52,7 @@ export default function UBCMap({
           description?: string;
           thumbnail?: string;
           thumbnailAlt?: string;
+          markers?: Array<Record<string, unknown>>;
         }>;
 
         if (cancelled) return;
@@ -62,7 +66,16 @@ export default function UBCMap({
             description: p.description ?? "",
             thumbnail: p.thumbnail ?? "",
             thumbnailAlt: p.thumbnailAlt ?? "",
+            markers: p.markers ?? [],
           }));
+
+        console.log(
+          "Pins loaded successfully",
+          nextPins.map((pin) => ({
+            title: pin.title,
+            markers: pin.markers ?? [],
+          }))
+        ); // debug
 
         setPins(nextPins);
       } catch (err) {
@@ -230,7 +243,7 @@ export default function UBCMap({
           });
 
           button.addEventListener("click", () => {
-            if (pin.path) openViewer(pin.path);
+            if (pin.path) openViewer(pin.path, pin.markers);
           });
 
           infoWindowRef.current = infoWindow;

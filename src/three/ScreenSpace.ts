@@ -6,6 +6,9 @@ export class ScreenSpaceUI {
   private root: HTMLDivElement;
   private positionLabel: HTMLDivElement;
   private fpsLabel: HTMLDivElement;
+  private speedWrap: HTMLDivElement;
+  private speedValue: HTMLSpanElement;
+  private onSpeedChange?: (value: number) => void;
 
   private playerWorldPos = new THREE.Vector3();
   private fps = 0;
@@ -56,8 +59,44 @@ export class ScreenSpaceUI {
     });
     this.fpsLabel.textContent = "FPS: 0";
 
+    // speed slider
+    this.speedWrap = document.createElement("div");
+    Object.assign(this.speedWrap.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      padding: "4px 8px",
+      background: "rgba(0, 0, 0, 0.5)",
+      borderRadius: "4px",
+      pointerEvents: "auto",
+    });
+
+    const speedLabel = document.createElement("span");
+    speedLabel.textContent = "Speed";
+    this.speedValue = document.createElement("span");
+    this.speedValue.textContent = "";
+    Object.assign(this.speedValue.style, { minWidth: "42px", textAlign: "right" });
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "0.05";
+    slider.max = "3";
+    slider.step = "0.05";
+    slider.value = "0.5";
+    Object.assign(slider.style, { width: "120px" });
+    slider.addEventListener("input", () => {
+      const v = parseFloat(slider.value);
+      this.speedValue.textContent = `${v.toFixed(2)} units/s`;
+      this.onSpeedChange?.(v);
+    });
+
+    this.speedWrap.appendChild(speedLabel);
+    this.speedWrap.appendChild(slider);
+    this.speedWrap.appendChild(this.speedValue);
+
     this.root.appendChild(this.positionLabel);
     this.root.appendChild(this.fpsLabel);
+    this.root.appendChild(this.speedWrap);
     this.container.appendChild(this.root);
   }
 
@@ -70,6 +109,16 @@ export class ScreenSpaceUI {
 
   public setFps(fps: number) {
     this.fps = fps;
+  }
+
+  public setSpeed(value: number) {
+    this.speedValue.textContent = `${value.toFixed(2)} units/s`;
+    const slider = this.speedWrap.querySelector("input[type=range]") as HTMLInputElement | null;
+    if (slider) slider.value = value.toString();
+  }
+
+  public setSpeedChangeHandler(fn: (value: number) => void) {
+    this.onSpeedChange = fn;
   }
 
   /**

@@ -7,8 +7,9 @@ export class FlyControls {
 
   // Flycam
   private flyVel = new THREE.Vector3();
-  private flySpeed = 3.0; // m/s
+  private flySpeed = 0.5; // units per second
   private damping = 8.0;
+  private scrollBoost = 0.1; // 
 
   private moving = {
     f: false,
@@ -32,6 +33,7 @@ export class FlyControls {
   private onPointerDown = (e: PointerEvent) => this.handlePointerDown(e);
   private onPointerMove = (e: PointerEvent) => this.handlePointerMove(e);
   private onPointerUp = (e: PointerEvent) => this.handlePointerUp(e);
+  private onWheel = (e: WheelEvent) => this.handleWheel(e);
 
   constructor(camera: THREE.PerspectiveCamera, domElement: HTMLElement) {
     console.log("FlyControls created");
@@ -53,6 +55,7 @@ export class FlyControls {
     this.domElement.addEventListener("pointermove", this.onPointerMove);
     this.domElement.addEventListener("pointerup", this.onPointerUp);
     this.domElement.addEventListener("pointerleave", this.onPointerUp);
+    this.domElement.addEventListener("wheel", this.onWheel, { passive: false });
   }
 
   /**
@@ -82,6 +85,14 @@ export class FlyControls {
     this.camera.position.add(this.flyVel);
   }
 
+  setFlySpeed(speed: number) {
+    this.flySpeed = Math.max(0, speed);
+  }
+
+  getFlySpeed(): number {
+    return this.flySpeed;
+  }
+
   dispose() {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
@@ -89,6 +100,7 @@ export class FlyControls {
     this.domElement.removeEventListener("pointermove", this.onPointerMove);
     this.domElement.removeEventListener("pointerup", this.onPointerUp);
     this.domElement.removeEventListener("pointerleave", this.onPointerUp);
+    this.domElement.removeEventListener("wheel", this.onWheel);
   }
 
   // --- Pointer handlers ---
@@ -129,6 +141,21 @@ export class FlyControls {
       /* noop */
     }
     this.domElement.style.cursor = "grab";
+  }
+
+  // --- Wheel handler ---
+
+  private handleWheel(e: WheelEvent) {
+    // Prevent page scroll when hovering the canvas
+    e.preventDefault();
+
+    // deltaY > 0 = scroll down => move backward; < 0 move forward
+    const direction = e.deltaY < 0 ? 1 : -1;
+    const forward = new THREE.Vector3(0, 0, -1)
+      .applyQuaternion(this.camera.quaternion)
+      .normalize();
+    const magnitude = this.flySpeed * this.scrollBoost;
+    this.flyVel.addScaledVector(forward, magnitude * direction);
   }
 
   // --- Keyboard handlers ---
