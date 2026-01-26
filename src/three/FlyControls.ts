@@ -10,6 +10,7 @@ export class FlyControls {
   private flySpeed = 0.5; // units per second
   private damping = 8.0;
   private scrollBoost = 0.1; // 
+  private bounds: THREE.Box3 | null = null;
 
   private moving = {
     f: false,
@@ -82,7 +83,23 @@ export class FlyControls {
     if (this.moving.u) this.flyVel.addScaledVector(worldUp, speed * dt);
     if (this.moving.d) this.flyVel.addScaledVector(worldUp, -speed * dt);
 
-    this.camera.position.add(this.flyVel);
+    const nextPos = this.camera.position.clone().add(this.flyVel);
+
+    if (this.bounds) {
+      const { min, max } = this.bounds;
+      const clampedX = THREE.MathUtils.clamp(nextPos.x, min.x, max.x);
+      const clampedY = THREE.MathUtils.clamp(nextPos.y, min.y, max.y);
+      const clampedZ = THREE.MathUtils.clamp(nextPos.z, min.z, max.z);
+      const blocked =
+        clampedX !== nextPos.x || clampedY !== nextPos.y || clampedZ !== nextPos.z;
+
+      nextPos.set(clampedX, clampedY, clampedZ);
+      if (blocked) {
+        this.flyVel.set(0, 0, 0); // stop accumulated momentum when hitting bounds
+      }
+    }
+
+    this.camera.position.copy(nextPos);
   }
 
   setFlySpeed(speed: number) {
@@ -91,6 +108,10 @@ export class FlyControls {
 
   getFlySpeed(): number {
     return this.flySpeed;
+  }
+
+  setBounds(bounds: THREE.Box3 | null) {
+    this.bounds = bounds ? bounds.clone() : null;
   }
 
   dispose() {

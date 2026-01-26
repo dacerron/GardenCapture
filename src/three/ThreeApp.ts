@@ -8,7 +8,10 @@ import { Skybox } from "./Skybox";
 import { LoadingOverlay } from "./LoadingOverlay";
 
 const DEFAULT_SKYBOX_URL = "/citrus_orchard_puresky_4k.hdr"; // local HDR equirectangular sky
-const DEFAULT_SPLAT_PATH = "/assets/gaussian_splat_data/UBC_Farm_Agricultural.splat";
+const DEFAULT_PLAY_AREA_BOUNDS = new THREE.Box3(
+  new THREE.Vector3(-25, -5, -25),
+  new THREE.Vector3(25, 15, 25)
+);
 
 export class ThreeApp {
   private container: HTMLElement;
@@ -48,6 +51,7 @@ export class ThreeApp {
   // axes
   private worldAxesScene = new THREE.Scene();
   private worldAxes?: THREE.AxesHelper;
+  private playAreaBounds: THREE.Box3 | null = null;
 
   // ------------------
   // CONSTRUCTOR
@@ -102,6 +106,7 @@ export class ThreeApp {
 
     // Fly controls
     this.controls = new FlyControls(this.camera, this.renderer.domElement);
+    this.setPlayAreaBounds(DEFAULT_PLAY_AREA_BOUNDS);
     this.screenUI.setSpeedChangeHandler((v) => this.controls.setFlySpeed(v));
     this.screenUI.setSpeed(this.controls.getFlySpeed());
 
@@ -188,7 +193,6 @@ export class ThreeApp {
     if (this.destroyed) return;
     this.overlay.show();
     try {
-      //await this.gaussian.setPath(DEFAULT_SPLAT_PATH); //temp
       await this.gaussian.setPath(path);
       if (!this.destroyed) {
         this.camera.position.set(0, 2.5, 5);
@@ -206,6 +210,11 @@ export class ThreeApp {
 
   public setWorldMarkers(markers: Parameters<WorldMarkers["setMarkers"]>[0]) {
     this.markers.setMarkers(markers);
+  }
+
+  public setPlayAreaBounds(bounds: THREE.Box3 | null | undefined) {
+    this.playAreaBounds = bounds ? bounds.clone() : null;
+    this.controls.setBounds(this.playAreaBounds);
   }
 
   // -------------------------------------------------------------------------
