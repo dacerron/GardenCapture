@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader";
+import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 import skyboxVertexShader from "./shaders/skybox.vs?raw";
 import skyboxFragmentShader from "./shaders/skybox.fs?raw";
 
