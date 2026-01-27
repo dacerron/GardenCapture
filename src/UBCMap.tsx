@@ -269,7 +269,7 @@ export default function UBCMap({
   return (
     <div
       ref={containerRef}
-      style={{ width: "100%", height: "60vh", borderRadius: 12 }}
+      style={{ width: "min(1100px, 100%)", height: "60vh", borderRadius: 12, margin: "0 auto" }}
     />
   );
 }
