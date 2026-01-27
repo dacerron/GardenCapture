@@ -170,7 +170,7 @@ export default function App() {
             <p>
               The next step is to create a desktop application &amp; PC-VR ready Virtual Soils
               application, that allows anyone with a VR ready PC to go and truly experience the
-              soils— to meet with someone halfway across the world, and discuss “in the field”
+              soils. To meet with someone halfway across the world, and discuss “in the field”
               about the soils at their feet. To share knowledge, collaboratively, in a completely
               new way.
             </p>
