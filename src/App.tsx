@@ -1,16 +1,36 @@
+import { useState } from "react";
 import "./index.css";
 import UBCMap from "./UBCMap";
+import Viewer from "./Viewer";
+
+type ViewerState = {
+  path: string;
+  markers?: Array<Record<string, unknown>>;
+} | null;
 
 export default function App() {
+  const [viewerState, setViewerState] = useState<ViewerState>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+
   const openViewer = (path?: string, markers?: Array<Record<string, unknown>>) => {
     if (!path) return;
-    const url = new URL("/viewer", window.location.href);
-    url.searchParams.set("gaussianPath", path);
-    if (markers && markers.length > 0) {
-      url.searchParams.set("markers", JSON.stringify(markers));
-    }
-    window.open(url.href, "_blank", "noopener,noreferrer");
+    setViewerState({ path, markers });
   };
+
+  const closeViewer = () => {
+    setViewerState(null);
+  };
+
+  // When viewing, show the embedded viewer instead of the main page
+  if (viewerState) {
+    return (
+      <Viewer
+        gaussianPath={viewerState.path}
+        markers={viewerState.markers}
+        onBack={closeViewer}
+      />
+    );
+  }
 
   return (
     <div className="app" style={{ minHeight: "100dvh" }}>
@@ -18,15 +38,14 @@ export default function App() {
         <div style={{ textAlign: "center", maxWidth: 520 }}>
           <h1 style={{ marginBottom: "1rem" }}>Virtual Soils</h1>
           <p style={{ margin: 0, lineHeight: 1.6, color: "#9aa4b5" }}>
-            Browse the map below and select a field pin to launch its interactive 3D capture in a
-            new tab.
+            Browse the map below and select a field pin to launch its interactive 3D capture.
           </p>
         </div>
       </section>
 
       <section style={{ padding: "0 1rem 2rem" }}>
         <div className="contentWidth">
-          <UBCMap openViewer={openViewer} />
+          <UBCMap openViewer={openViewer} mapLoaded={mapLoaded} setMapLoaded={setMapLoaded} />
         </div>
       </section>
 
@@ -67,7 +86,7 @@ export default function App() {
               <img
                 src="/assets/images/Canada-Soil-Map.jpg"
                 alt="Soil Order Map of Canada"
-                style={{ width: "100%", borderRadius: 12 }}
+                style={{ width: "100%", borderRadius: 6 }}
               />
               <figcaption style={{ opacity: 0.8, marginTop: ".5rem" }}>
                 Soil Order Map of Canada from{" "}
@@ -108,7 +127,7 @@ export default function App() {
               <img
                 src="/assets/images/Soil-Monolith.jpg"
                 alt="Soil monolith photograph"
-                style={{ width: "100%", borderRadius: 12 }}
+                style={{ width: "100%", borderRadius: 6 }}
               />
               <figcaption style={{ opacity: 0.8, marginTop: ".5rem" }}>
                 A photograph of Monolith 8-04 from the UBC Soil Monolith Collection.
@@ -140,7 +159,7 @@ export default function App() {
               <img
                 src="/assets/images/Radiance-Fields-Demo.jpg"
                 alt="Radiance fields demo in VRChat"
-                style={{ width: "100%", borderRadius: 12 }}
+                style={{ width: "100%", borderRadius: 6 }}
               />
               <figcaption style={{ opacity: 0.8, marginTop: ".5rem" }}>
                 An example of how PC-VR based radiance fields have been used for soil science
@@ -176,7 +195,7 @@ export default function App() {
             </p>
 
             <h3>The Concept for PC-VR based Virtual Soils:</h3>
-            <div style={{ width: "100%", aspectRatio: "16/9", borderRadius: 12, overflow: "hidden" }}>
+            <div style={{ width: "100%", aspectRatio: "16/9", borderRadius: 6, overflow: "hidden" }}>
               <iframe
                 width="100%"
                 height="100%"
@@ -198,7 +217,7 @@ export default function App() {
               <img
                 src="/assets/images/Gaussian-Splat.jpg"
                 alt="3D Gaussian splats example"
-                style={{ width: "100%", borderRadius: 12 }}
+                style={{ width: "100%", borderRadius: 6 }}
               />
               <figcaption style={{ opacity: 0.8, marginTop: ".5rem" }}>
                 A screenshot from the radiance field of the Ed Lyon Forest Garden on Sts&apos;ailes
@@ -287,7 +306,7 @@ export default function App() {
               <img
                 src="assets/images/Capture-Aids.jpg"
                 alt="Capture aids with AprilTags"
-                style={{ width: "100%", borderRadius: 12 }}
+                style={{ width: "100%", borderRadius: 6 }}
               />
               <figcaption style={{ opacity: 0.8, marginTop: ".5rem" }}>
                 A screenshot of the tracking soil tape, and scale flags used in the capture of the
