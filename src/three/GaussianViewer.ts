@@ -10,6 +10,7 @@ interface GSViewer {
       scale: [number, number, number];
       rotation: [number, number, number, number];
       progressiveLoad?: boolean;
+      splatAlphaRemovalThreshold?: number;
     }
   ): Promise<void>;
   update(): void;
@@ -27,8 +28,11 @@ type GSViewerCtor = new (opts: {
   gpuAcceleratedSort?: boolean;
   sharedMemoryForWorkers?: boolean;
   integerBasedSort?: boolean;
+  halfPrecisionCovariancesOnGPU?: boolean;
   sphericalHarmonicsDegree?: number;
   logLevel?: number;
+  dynamicScene?: boolean;
+  freeIntermediateSplatData?: boolean;
 }) => GSViewer;
 
 const ViewerClass: GSViewerCtor = (
@@ -37,28 +41,61 @@ const ViewerClass: GSViewerCtor = (
   }
 ).Viewer;
 
-const LogLevelDebug: number =
-  (GaussianSplats3D as unknown as { LogLevel?: { Debug: number } }).LogLevel
-    ?.Debug ?? 2;
+const LogLevelNone: number =
+  (GaussianSplats3D as unknown as { LogLevel?: { None: number } }).LogLevel
+    ?.None ?? 0;
+
+export interface GaussianViewerOptions {
+  // Higher = more aggressive culling = faster but more visual holes
+  splatAlphaRemovalThreshold?: number;
+}
 
 export class GaussianViewer {
   private viewer: GSViewer;
   private currentPath?: string;
   private loadToken = 0;
   private destroyed = false;
+  private alphaThreshold: number;
 
-  constructor(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera) {
+  constructor(
+    renderer: THREE.WebGLRenderer,
+    camera: THREE.PerspectiveCamera,
+    options: GaussianViewerOptions = {}
+  ) {
+    // Optimizations:
+    // - integerBasedSort: ~2x faster CPU sorting
+    // - sharedMemoryForWorkers: faster worker communication (if available)
+    // - halfPrecisionCovariancesOnGPU: less VRAM, slightly less precision
+    // - freeIntermediateSplatData: free memory after loading
+    // - dynamicScene: false = optimizes for static scenes
+    const useSharedMemory = typeof SharedArrayBuffer !== "undefined";
+    this.alphaThreshold = options.splatAlphaRemovalThreshold ?? 1;
+
+    console.log("[GaussianViewer] Alpha removal threshold:", this.alphaThreshold);
+    console.log("[GaussianViewer] SharedArrayBuffer:", useSharedMemory);
+
     this.viewer = new ViewerClass({
       selfDrivenMode: false,
       renderer,
       camera,
       useBuiltInControls: false,
       gpuAcceleratedSort: false,
-      sharedMemoryForWorkers: false,
-      integerBasedSort: false,
-      sphericalHarmonicsDegree: 1,
-      logLevel: LogLevelDebug,
+      sharedMemoryForWorkers: useSharedMemory,
+      integerBasedSort: true,
+      halfPrecisionCovariancesOnGPU: true,
+      sphericalHarmonicsDegree: 0, // Most splat files don't have SH data anyway
+      dynamicScene: false,
+      freeIntermediateSplatData: true,
+      logLevel: LogLevelNone,
     });
+  }
+
+  getAlphaThreshold(): number {
+    return this.alphaThreshold;
+  }
+
+  getCurrentPath(): string | undefined {
+    return this.currentPath;
   }
 
   update() {
@@ -84,11 +121,13 @@ export class GaussianViewer {
       await this.viewer.addSplatScene(path, {
         position: [0, 0, 0],
         scale: [1, 1, 1],
-        // Flip 1so it doesn't render upside down.
+        // Flip so it doesn't render upside down.
         rotation: [1, 0, 0, 0],
-        progressiveLoad: false,
+        progressiveLoad: true, // Load progressively for faster initial render
+        // Remove transparent splats - higher = more culling = faster
+        splatAlphaRemovalThreshold: this.alphaThreshold,
       });
-      await this.waitForFrames(60);
+      await this.waitForFrames(30); // Reduced from 60
     } catch (e) {
       if (this.destroyed || token !== this.loadToken) {
         // Ignore errors from loads that were superseded or canceled by dispose

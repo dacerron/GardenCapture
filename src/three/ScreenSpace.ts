@@ -1,6 +1,25 @@
 // ScreenSpace.ts
 import * as THREE from "three";
 
+export type PerformancePreset = "low" | "medium" | "high";
+
+export interface PerformanceSettings {
+  preset: PerformancePreset;
+  pixelRatio: number;
+  // Higher threshold = more splats culled = faster but more holes
+  // 0 = keep all splats, 20+ = aggressive culling
+  splatAlphaRemovalThreshold: number;
+}
+
+export const PERFORMANCE_PRESETS: Record<PerformancePreset, PerformanceSettings> = {
+  // Low: aggressive culling, reduced resolution
+  low: { preset: "low", pixelRatio: 0.5, splatAlphaRemovalThreshold: 15 },
+  // Medium: moderate culling, full resolution
+  medium: { preset: "medium", pixelRatio: 1.0, splatAlphaRemovalThreshold: 5 },
+  // High: minimal culling, full resolution
+  high: { preset: "high", pixelRatio: 1.0, splatAlphaRemovalThreshold: 1 },
+};
+
 export class ScreenSpaceUI {
   private container: HTMLElement;
   private root: HTMLDivElement;
@@ -8,7 +27,9 @@ export class ScreenSpaceUI {
   private fpsLabel: HTMLDivElement;
   private speedWrap: HTMLDivElement;
   private speedValue: HTMLSpanElement;
+  private perfSelect: HTMLSelectElement;
   private onSpeedChange?: (value: number) => void;
+  private onPerformanceChange?: (settings: PerformanceSettings) => void;
 
   private playerWorldPos = new THREE.Vector3();
   private fps = 0;
@@ -38,7 +59,60 @@ export class ScreenSpaceUI {
       color: "#ffffff",
     });
 
-    //  world position lavel
+    // Performance preset selector
+    const perfWrap = document.createElement("div");
+    Object.assign(perfWrap.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      padding: "4px 8px",
+      background: "rgba(0, 0, 0, 0.5)",
+      borderRadius: "4px",
+      pointerEvents: "auto",
+    });
+
+    const perfLabel = document.createElement("span");
+    perfLabel.textContent = "Quality";
+
+    this.perfSelect = document.createElement("select");
+    Object.assign(this.perfSelect.style, {
+      background: "rgba(255, 255, 255, 0.1)",
+      border: "1px solid rgba(255, 255, 255, 0.2)",
+      borderRadius: "3px",
+      color: "#fff",
+      padding: "2px 6px",
+      fontSize: "12px",
+      cursor: "pointer",
+    });
+
+    const presetLabels: Record<PerformancePreset, string> = {
+      low: "Low",
+      medium: "Medium", 
+      high: "High",
+    };
+
+    for (const [key, label] of Object.entries(presetLabels)) {
+      const option = document.createElement("option");
+      option.value = key;
+      option.textContent = label;
+      option.style.background = "#1a1a2e";
+      option.style.color = "#fff";
+      this.perfSelect.appendChild(option);
+    }
+
+    // Default to medium
+    this.perfSelect.value = "medium";
+
+    this.perfSelect.addEventListener("change", () => {
+      const preset = this.perfSelect.value as PerformancePreset;
+      const settings = PERFORMANCE_PRESETS[preset];
+      this.onPerformanceChange?.(settings);
+    });
+
+    perfWrap.appendChild(perfLabel);
+    perfWrap.appendChild(this.perfSelect);
+
+    //  world position label
     this.positionLabel = document.createElement("div");
     Object.assign(this.positionLabel.style, {
         background: "rgba(0, 0, 0, 0.5)", 
@@ -94,6 +168,7 @@ export class ScreenSpaceUI {
     this.speedWrap.appendChild(slider);
     this.speedWrap.appendChild(this.speedValue);
 
+    this.root.appendChild(perfWrap);
     this.root.appendChild(this.positionLabel);
     this.root.appendChild(this.fpsLabel);
     this.root.appendChild(this.speedWrap);
@@ -119,6 +194,19 @@ export class ScreenSpaceUI {
 
   public setSpeedChangeHandler(fn: (value: number) => void) {
     this.onSpeedChange = fn;
+  }
+
+  public setPerformanceChangeHandler(fn: (settings: PerformanceSettings) => void) {
+    this.onPerformanceChange = fn;
+  }
+
+  public setPerformancePreset(preset: PerformancePreset) {
+    this.perfSelect.value = preset;
+  }
+
+  public getPerformanceSettings(): PerformanceSettings {
+    const preset = this.perfSelect.value as PerformancePreset;
+    return PERFORMANCE_PRESETS[preset];
   }
 
   /**
