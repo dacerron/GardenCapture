@@ -1,7 +1,7 @@
 // ThreeApp.ts
 import * as THREE from "three";
 import { FlyControls } from "./FlyControls";
-import { ScreenSpaceUI } from "./ScreenSpace";
+import { ScreenSpaceUI, PerformanceSettings, PERFORMANCE_PRESETS } from "./ScreenSpace";
 import { GaussianViewer } from "./GaussianViewer";
 import { WorldMarkers } from "./WorldMarkers";
 import { Skybox } from "./Skybox";
@@ -17,7 +17,6 @@ const DEFAULT_PLAY_AREA_BOUNDS = new THREE.Box3(
   new THREE.Vector3(25, 15, 25)
 );
 
-
 export class ThreeApp {
   // Core
   private container: HTMLElement;
@@ -28,6 +27,9 @@ export class ThreeApp {
   private clock = new THREE.Clock();
   private fps = 0;
   private destroyed = false;
+
+  // Performance settings (controlled by UI)
+  private perfSettings: PerformanceSettings = PERFORMANCE_PRESETS.medium;
 
   // Resize
   private resizeObs?: ResizeObserver;
@@ -74,7 +76,12 @@ export class ThreeApp {
   }
 
   private initRenderer() {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ 
+      antialias: false, // AA has minimal impact on splats
+      powerPreference: "high-performance", // Request dedicated GPU
+      stencil: false, // We don't use stencil
+      depth: true,
+    });
     Object.assign(this.renderer.domElement.style, {
       width: "100%",
       height: "100%",
@@ -95,7 +102,9 @@ export class ThreeApp {
   }
 
   private initGaussianViewer() {
-    this.gaussian = new GaussianViewer(this.renderer, this.camera);
+    this.gaussian = new GaussianViewer(this.renderer, this.camera, {
+      splatAlphaRemovalThreshold: this.perfSettings.splatAlphaRemovalThreshold,
+    });
   }
 
   private initUI() {
@@ -113,6 +122,11 @@ export class ThreeApp {
     this.setPlayAreaBounds(DEFAULT_PLAY_AREA_BOUNDS);
     this.screenUI.setSpeedChangeHandler((v) => this.controls.setFlySpeed(v));
     this.screenUI.setSpeed(this.controls.getFlySpeed());
+    
+    // Performance preset handler
+    this.screenUI.setPerformanceChangeHandler((settings) => {
+      this.applyPerformanceSettings(settings);
+    });
   }
 
   private initSkybox() {
@@ -166,8 +180,13 @@ export class ThreeApp {
   }
 
   private renderFrame() {
+    // Skybox is relatively cheap, always render
     this.skybox.render(this.renderer, this.camera);
+    
+    // Markers are cheap, always render
     this.markers.render(this.renderer, this.camera);
+    
+    // Gaussian splats - the main performance bottleneck
     this.gaussian.render();
   }
 
@@ -214,7 +233,8 @@ export class ThreeApp {
   //-------------------------------------------------------------------------
 
   private resizeToContainer(force = false) {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Use pixel ratio from performance settings
+    const dpr = Math.min(window.devicePixelRatio || 1, this.perfSettings.pixelRatio);
     if (!force && Math.abs(dpr - this.prevDpr) < 0.001) return;
 
     this.prevDpr = dpr;
@@ -242,6 +262,47 @@ export class ThreeApp {
         : THREE.MathUtils.lerp(this.fps, instFps, 0.1); // smooth a bit
       
     return dt;
+  }
+
+  private applyPerformanceSettings(settings: PerformanceSettings) {
+    const prevSettings = this.perfSettings;
+    this.perfSettings = settings;
+    
+    console.log("[ThreeApp] Performance preset:", settings.preset);
+    console.log("[ThreeApp] Alpha threshold:", settings.splatAlphaRemovalThreshold);
+    console.log("[ThreeApp] Pixel ratio:", settings.pixelRatio);
+
+    // Apply pixel ratio change
+    this.resizeToContainer(true);
+
+    // Alpha threshold change requires recreating the gaussian viewer and reloading
+    if (settings.splatAlphaRemovalThreshold !== prevSettings.splatAlphaRemovalThreshold) {
+      console.log("[ThreeApp] Alpha threshold changed, reloading scene...");
+      this.recreateGaussianViewer();
+    }
+  }
+
+  private async recreateGaussianViewer() {
+    // Save current scene path
+    const currentPath = this.gaussian.getCurrentPath();
+    
+    // Dispose old viewer
+    this.gaussian.dispose();
+    
+    // Create new viewer with updated settings
+    this.gaussian = new GaussianViewer(this.renderer, this.camera, {
+      splatAlphaRemovalThreshold: this.perfSettings.splatAlphaRemovalThreshold,
+    });
+    
+    // Reload scene if one was loaded
+    if (currentPath) {
+      this.overlay.show();
+      try {
+        await this.gaussian.loadScene(currentPath);
+      } finally {
+        if (!this.destroyed) this.overlay.hide();
+      }
+    }
   }
 
   dispose() {
