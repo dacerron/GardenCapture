@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import * as THREE from "three";
 import { ThreeApp } from "./three/ThreeApp";
 import type { MarkerInput } from "./three/WorldMarkers";
@@ -241,23 +241,7 @@ export default function Editor() {
           flexDirection: "column",
           gap: "1rem",
         }}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
-          <Link
-            to="/"
-            style={{
-              padding: "0.5rem 0.75rem",
-              borderRadius: 6,
-              background: "rgba(255,255,255,0.1)",
-              color: "#e6edf3",
-              textDecoration: "none",
-              fontSize: "0.9rem",
-            }}
-          >
-            ← Back to Map
-          </Link>
-        </div>
-
+      >    
         <h3 style={{ margin: 0, fontSize: "1rem", color: "#e6edf3" }}>Scene</h3>
         {pins.length > 0 && (
         <select
