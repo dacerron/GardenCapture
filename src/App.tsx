@@ -11,6 +11,9 @@ type ViewerState = {
 export default function App() {
   const [viewerState, setViewerState] = useState<ViewerState>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [activeTab, setActiveTab] = useState<"viewer" | "about">("viewer");
+  const [viewerSidebarCollapsed, setViewerSidebarCollapsed] = useState(false);
+  const [aboutSidebarCollapsed, setAboutSidebarCollapsed] = useState(false);
 
   const openViewer = (path?: string, markers?: Array<Record<string, unknown>>) => {
     if (!path) return;
@@ -33,51 +36,66 @@ export default function App() {
   }
 
   return (
-    <div className="app" style={{ minHeight: "100dvh" }}>
-      <section style={{ display: "grid", placeItems: "center", padding: "3rem 1rem" }}>
-        <div style={{ textAlign: "center", maxWidth: 520 }}>
-          <h1 style={{ marginBottom: "1rem" }}>Virtual Soils</h1>
-          <p style={{ margin: 0, lineHeight: 1.6, color: "#9aa4b5" }}>
-            Browse the map below and select a field pin to launch its interactive 3D capture.
-          </p>
+    <div className="appShell">
+      <header className="appHeader">
+        <div className="tabList" role="tablist" aria-label="Virtual Soil sections">
+          <button
+            type="button"
+            className={`appTab ${activeTab === "viewer" ? "active" : ""}`}
+            onClick={() => setActiveTab("viewer")}
+            role="tab"
+            aria-selected={activeTab === "viewer"}
+          >
+            Viewer
+          </button>
+          <button
+            type="button"
+            className={`appTab ${activeTab === "about" ? "active" : ""}`}
+            onClick={() => setActiveTab("about")}
+            role="tab"
+            aria-selected={activeTab === "about"}
+          >
+            About
+          </button>
         </div>
-      </section>
+        <h1 className="appTitle">Virtual Soils</h1>
+        <div className="headerSpacer" aria-hidden />
+      </header>
 
-      <section style={{ padding: "0 1rem 2rem" }}>
-        <div className="contentWidth">
-          <UBCMap openViewer={openViewer} mapLoaded={mapLoaded} setMapLoaded={setMapLoaded} />
-        </div>
-      </section>
+      <main className="tabContent">
+        {activeTab === "viewer" ? (
+          <UBCMap
+            openViewer={openViewer}
+            mapLoaded={mapLoaded}
+            setMapLoaded={setMapLoaded}
+            sidebarCollapsed={viewerSidebarCollapsed}
+            setSidebarCollapsed={setViewerSidebarCollapsed}
+          />
+        ) : (
+          <section className="aboutPane">
+            <aside className={`sidePanel ${aboutSidebarCollapsed ? "collapsed" : ""}`}>
+              <button
+                type="button"
+                className="collapseToggle"
+                aria-label={aboutSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                onClick={() => setAboutSidebarCollapsed((current) => !current)}
+              >
+                {aboutSidebarCollapsed ? ">" : "<"}
+              </button>
 
-      {/* Info section */}
-      <section className="mapInfo">
-        <div
-          className="contentWidth mapInfoInner"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(200px, 260px) 1fr",
-            gap: "2rem",
-            alignItems: "start",
-          }}
-        >
-          {/* Left nav */}
-          <aside style={{ position: "sticky", top: "1rem" }}>
-            <h2 style={{ marginTop: 0 }}>Quickly Navigate</h2>
-            <div style={{ display: "grid", gap: "0.75rem" }}>
-              <a href="#TheWhy" className="btn btn-sec-hov">
-                Why Virtual Soils?
-              </a>
-              <a href="#TheWhat" className="btn btn-sec-hov">
-                What are Radiance Fields?
-              </a>
-              <a href="#NextSteps" className="btn btn-sec-hov">
-                Next Steps
-              </a>
-            </div>
-          </aside>
+              {!aboutSidebarCollapsed && (
+                <>
+                  <h2 className="sidePanelTitle">About</h2>
+                  <nav className="sidePanelList" aria-label="About sections">
+                    <a href="#TheWhy">Why Virtual Soils?</a>
+                    <a href="#TheWhat">What are Radiance Fields?</a>
+                    <a href="#NextSteps">Project Next Steps</a>
+                  </nav>
+                </>
+              )}
+            </aside>
 
-          {/* Main content */}
-          <article className="floatSection">
+            <article className="aboutContent floatSection">
             {/* WHY */}
             <h2 id="TheWhy">Why Virtual Soils?</h2>
 
@@ -339,9 +357,10 @@ export default function App() {
               If you want to get in contact about the Virtual Soils project please email{" "}
               <a href="mailto:amy.wells@virtualsoils.ca">amy.wells@virtualsoils.ca</a>!
             </p>
-          </article>
-        </div>
-      </section>
+            </article>
+          </section>
+        )}
+      </main>
     </div>
   );
 }

@@ -19,10 +19,14 @@ export default function UBCMap({
   openViewer,
   mapLoaded,
   setMapLoaded,
+  sidebarCollapsed,
+  setSidebarCollapsed,
 }: {
   openViewer: (path?: string, markers?: Array<Record<string, unknown>>) => void;
   mapLoaded: boolean;
   setMapLoaded: (loaded: boolean) => void;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (collapsed: boolean | ((current: boolean) => boolean)) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -359,153 +363,69 @@ export default function UBCMap({
   };
 
   return (
-    <div style={{ width: "min(1100px, 100%)", margin: "0 auto", display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-      {/* Side Menu */}
-      <aside
-        style={{
-          width: "240px",
-          flexShrink: 0,
-          backgroundColor: "rgba(255, 255, 255, 0.06)",
-          borderRadius: 6,
-          padding: "1rem",
-          height: "60vh",
-          overflowY: "auto",
-          border: "1px solid rgba(255, 255, 255, 0.08)",
-          boxSizing: "border-box",
-        }}
-      >
-        <h3 style={{ margin: "0 0 0.75rem 0", fontSize: "1.1rem", color: "#e6edf3", fontWeight: 600 }}>
-          Locations
-        </h3>
-        <input
-          type="text"
-          placeholder="Search locations..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            width: "100%",
-            padding: "0.5rem 0.75rem",
-            marginBottom: "0.75rem",
-            borderRadius: "4px",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            backgroundColor: "rgba(255, 255, 255, 0.04)",
-            color: "#e6edf3",
-            fontSize: "0.875rem",
-            outline: "none",
-            boxSizing: "border-box",
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.2)";
-            e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.08)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)";
-            e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.04)";
-          }}
-        />
-        {pins.length === 0 ? (
-          <div style={{ color: "#9aa4b5", fontSize: "0.9rem", padding: "1rem 0" }}>
-            Loading locations...
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-            {pins
-              .map((pin, index) => ({ pin, index }))
-              .filter(({ pin }) =>
-                (pin.title || "").toLowerCase().includes(searchQuery.toLowerCase())
-              )
-              .map(({ pin, index }) => (
-              <button
-                key={index}
-                className="location-btn"
-                onClick={() => handlePinMenuClick(index)}
-                style={{
-                  padding: "0.5rem 0.75rem",
-                  borderRadius: "4px",
-                  border: "none",
-                  backgroundColor: selectedPinIndex === index ? "rgba(255, 255, 255, 0.1)" : "rgba(255, 255, 255, 0.04)",
-                  color: selectedPinIndex === index ? "#fff" : "#b8c2d1",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontSize: "0.875rem",
-                  fontWeight: selectedPinIndex === index ? 500 : 400,
-                  transition: "background-color 0.15s, color 0.15s",
-                  outline: "none",
-                  boxShadow: "none",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.1)";
-                  e.currentTarget.style.color = "#fff";
-                }}
-                onMouseLeave={(e) => {
-                  if (selectedPinIndex !== index) {
-                    e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.04)";
-                    e.currentTarget.style.color = "#b8c2d1";
-                  } else {
-                    e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.1)";
-                  }
-                }}
-              >
-                {pin.title || `Location ${index + 1}`}
-              </button>
-            ))}
-            {pins.filter((pin) =>
-              (pin.title || "").toLowerCase().includes(searchQuery.toLowerCase())
-            ).length === 0 && searchQuery && (
-              <div style={{ color: "#9aa4b5", fontSize: "0.85rem", padding: "0.5rem 0", textAlign: "center" }}>
-                No locations found
+    <section className="viewerPane">
+      <aside className={`sidePanel ${sidebarCollapsed ? "collapsed" : ""}`}>
+        <button
+          type="button"
+          className="collapseToggle"
+          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={() => setSidebarCollapsed((current) => !current)}
+        >
+          {sidebarCollapsed ? ">" : "<"}
+        </button>
+
+        {!sidebarCollapsed && (
+          <>
+            <h2 className="sidePanelTitle">Virtual Soil Library</h2>
+            <input
+              type="text"
+              className="locationSearch"
+              placeholder="Search locations..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {pins.length === 0 ? (
+              <div className="sidePanelStatus">Loading locations...</div>
+            ) : (
+              <div className="sidePanelList">
+                {pins
+                  .map((pin, index) => ({ pin, index }))
+                  .filter(({ pin }) =>
+                    (pin.title || "").toLowerCase().includes(searchQuery.toLowerCase())
+                  )
+                  .map(({ pin, index }) => (
+                    <button
+                      key={index}
+                      className={`locationItem ${selectedPinIndex === index ? "active" : ""}`}
+                      onClick={() => handlePinMenuClick(index)}
+                    >
+                      {pin.title || `Location ${index + 1}`}
+                    </button>
+                  ))}
+                {pins.filter((pin) =>
+                  (pin.title || "").toLowerCase().includes(searchQuery.toLowerCase())
+                ).length === 0 &&
+                  searchQuery && <div className="sidePanelStatus">No locations found</div>}
               </div>
             )}
-          </div>
+          </>
         )}
       </aside>
 
-      {/* Map Container */}
-      <div
-        style={{
-          flex: 1,
-          height: "60vh",
-          borderRadius: 6,
-          position: "relative",
-          minWidth: 0,
-        }}
-      >
+      <div className="mapPane">
         <div
           ref={containerRef}
-          style={{ width: "100%", height: "100%", borderRadius: 6 }}
+          className="mapFrame"
         />
         {!mapLoaded && (
           <div
             onClick={() => setMapLoaded(true)}
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              backgroundColor: "#4a5568",
-              borderRadius: 6,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              userSelect: "none",
-              color: "#e2e8f0",
-              fontSize: "1.25rem",
-              fontWeight: 500,
-              transition: "background-color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#5a6578";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#4a5568";
-            }}
+            className="mapLoadPrompt"
           >
             Click to load map
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 }
