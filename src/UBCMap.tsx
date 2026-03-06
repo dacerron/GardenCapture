@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps } from "./lib/loadGoogleMaps";
 import { awsClient } from "./lib/awsClient";
+import Viewer from "./Viewer";
 
 type Pin = {
   title: string;
@@ -21,12 +22,16 @@ export default function UBCMap({
   setMapLoaded,
   sidebarCollapsed,
   setSidebarCollapsed,
+  activeViewer,
+  onCloseViewer,
 }: {
   openViewer: (path?: string, markers?: Array<Record<string, unknown>>) => void;
   mapLoaded: boolean;
   setMapLoaded: (loaded: boolean) => void;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean | ((current: boolean) => boolean)) => void;
+  activeViewer: { path: string; markers?: Array<Record<string, unknown>> } | null;
+  onCloseViewer: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -271,7 +276,13 @@ export default function UBCMap({
           });
 
           button.addEventListener("click", () => {
-            if (pin.path) openViewer(pin.path, pin.markers);
+            if (pin.path) {
+              if (infoWindowRef.current) {
+                infoWindowRef.current.close();
+                infoWindowRef.current = null;
+              }
+              openViewer(pin.path, pin.markers);
+            }
           });
 
           infoWindowRef.current = infoWindow;
@@ -413,16 +424,20 @@ export default function UBCMap({
       </aside>
 
       <div className="mapPane">
-        <div
-          ref={containerRef}
-          className="mapFrame"
-        />
+        <div ref={containerRef} className="mapFrame" />
         {!mapLoaded && (
-          <div
-            onClick={() => setMapLoaded(true)}
-            className="mapLoadPrompt"
-          >
+          <div onClick={() => setMapLoaded(true)} className="mapLoadPrompt">
             Click to load map
+          </div>
+        )}
+        {activeViewer && (
+          <div className="embeddedViewerOverlay">
+            <Viewer
+              gaussianPath={activeViewer.path}
+              markers={activeViewer.markers}
+              onBack={onCloseViewer}
+              embedded
+            />
           </div>
         )}
       </div>

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import "./index.css";
 import UBCMap from "./UBCMap";
-import Viewer from "./Viewer";
 
 type ViewerState = {
   path: string;
@@ -25,17 +24,6 @@ export default function App() {
   const closeViewer = () => {
     setViewerState(null);
   };
-
-  // When viewing, show the embedded viewer instead of the main page
-  if (viewerState) {
-    return (
-      <Viewer
-        gaussianPath={viewerState.path}
-        markers={viewerState.markers}
-        onBack={closeViewer}
-      />
-    );
-  }
 
   return (
     <div className="appShell">
@@ -73,6 +61,8 @@ export default function App() {
             setMapLoaded={setMapLoaded}
             sidebarCollapsed={viewerSidebarCollapsed}
             setSidebarCollapsed={setViewerSidebarCollapsed}
+            activeViewer={viewerState}
+            onCloseViewer={closeViewer}
           />
         ) : (
           <section className="aboutPane">

@@ -189,6 +189,7 @@ input {
   flex: 1;
   min-width: 0;
   position: relative;
+  overflow: hidden;
 }
 
 .mapFrame {
@@ -264,6 +265,17 @@ input {
   position: relative;
   height: 100vh;
   height: 100dvh;
+}
+
+.threeWrapEmbedded {
+  height: 100%;
+}
+
+.embeddedViewerOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: #1a1a1a;
 }
 
 canvas {
