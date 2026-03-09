@@ -1,169 +1,243 @@
-html, body, #root { min-height: 100%; }
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
 
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  --content-width: 1100px;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  color: #1f1f1f;
+  background: #c4c4c8;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-/* body {
+body {
   margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.appShell {
   display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: #c4c4c8;
+}
+
+.appHeader {
+  height: 68px;
+  padding: 0 1rem;
+  display: flex;
+  align-items: flex-end;
+  position: relative;
+}
+
+.appTitle {
+  margin: 0;
+  font-size: clamp(2rem, 3.5vw, 2.8rem);
+  font-style: italic;
+  font-weight: 500;
+  text-align: center;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0.35rem;
+  pointer-events: none;
+}
+
+.tabList {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0;
+  margin-bottom: -1px;
+  position: relative;
+  z-index: 5;
+}
+
+.appTab {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-bottom: none;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  font-size: 0.95rem;
+  font-style: italic;
+  color: #1f1f1f;
+  background: rgba(255, 255, 255, 0.28);
+  cursor: pointer;
+}
+
+.appTab.active {
+  background: rgba(255, 255, 255, 0.16);
+  font-weight: 600;
+}
+
+.appTab + .appTab {
+  margin-left: -1px;
+}
+
+.tabContent {
+  flex: 1;
+  min-height: 0;
+}
+
+.viewerPane,
+.aboutPane {
+  height: calc(100dvh - 68px);
+  display: flex;
+  min-height: 0;
+}
+
+.sidePanel {
+  width: 300px;
+  min-width: 300px;
+  background: rgba(255, 255, 255, 0.16);
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 1.25rem 1rem;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  transition: width 0.2s ease, min-width 0.2s ease, padding 0.2s ease;
+}
+
+.sidePanel.collapsed {
+  width: 58px;
+  min-width: 58px;
+  padding: 1rem 0.5rem;
+  overflow: hidden;
+}
+
+.collapseToggle {
+  position: absolute;
+  top: 1.1rem;
+  right: 0.6rem;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.14);
+  cursor: pointer;
+  z-index: 1;
+}
+
+.sidePanelTitle {
+  margin: 1rem 0 0.75rem;
+  font-size: 2rem;
+  font-style: italic;
+  font-weight: 500;
+  color: #1f1f1f;
+}
+
+.locationSearch {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.5);
+  margin-bottom: 0.75rem;
+}
+
+.sidePanelList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.locationItem,
+.sidePanelList a {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem;
+  border: none;
+  border-radius: 8px;
+  text-align: left;
+  color: #4e4e4e;
+  background: rgba(255, 255, 255, 0.32);
+  cursor: pointer;
+}
+
+.locationItem.active,
+.locationItem:hover,
+.sidePanelList a:hover {
+  color: #111111;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.sidePanelStatus {
+  color: #555555;
+  font-size: 0.92rem;
+  padding: 0.4rem 0.2rem;
+}
+
+.mapPane {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.mapFrame {
+  width: 100%;
+  height: 100%;
+}
+
+.mapLoadPrompt {
+  position: absolute;
+  inset: 0;
+  display: grid;
   place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-} */
-
-body { margin: 0; background: #0e1116; color: #e6edf3; font-family: system-ui, sans-serif; }
-.app { min-height: 100%; position: relative; }
-.threeWrap { position: relative; height: 100vh; height: 100dvh; }
-canvas { display: block; width: 100%; height: 100%; }
-
-/* Google Maps InfoWindow dark theme overrides */
-.gm-style .gm-style-iw-c {
-  background: #1a1f2e !important;
-  border-radius: 8px !important;
-  padding: 0 !important;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: #a4a4a8;
+  color: #ffffff;
+  font-size: 1.25rem;
+  cursor: pointer;
 }
 
-.gm-style .gm-style-iw-d {
-  overflow: hidden !important;
-  padding: 0 !important;
+.aboutContent {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2rem clamp(1.1rem, 2vw, 2rem);
 }
 
-.gm-style .gm-style-iw-tc::after {
-  background: #1a1f2e !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+.aboutContent h2 {
+  font-size: 2rem;
+  margin-top: 0;
+  margin-bottom: 0.9rem;
+  font-style: italic;
+  font-weight: 600;
 }
 
-/* Close button styling */
-.gm-style .gm-style-iw-chr {
-  position: absolute !important;
-  top: 8px !important;
-  right: 8px !important;
-  z-index: 10 !important;
-}
-
-.gm-style .gm-style-iw-chr button {
-  background: rgba(0, 0, 0, 0.5) !important;
-  border-radius: 50% !important;
-  width: 32px !important;
-  height: 32px !important;
-  opacity: 1 !important;
-  backdrop-filter: blur(4px) !important;
-  transition: background 0.2s !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-.gm-style .gm-style-iw-chr button:hover {
-  background: rgba(0, 0, 0, 0.7) !important;
-}
-
-.gm-style .gm-style-iw-chr button span {
-  margin: 0 !important;
-  width: 18px !important;
-  height: 18px !important;
-  filter: invert(1) !important;
-}
-
-/* Dark scrollbar for InfoWindow description */
-.info-window-desc::-webkit-scrollbar {
-  width: 6px;
-}
-
-.info-window-desc::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 3px;
-}
-
-.info-window-desc::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
-}
-
-.info-window-desc::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-/* Firefox scrollbar */
-.info-window-desc {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
-}
-
-/* Location menu buttons - override global button styles */
-.location-btn {
-  border: none !important;
-}
-.location-btn:hover,
-.location-btn:focus {
-  border-color: transparent !important;
-  outline: none !important;
-}
-
-.mapInfo {
-  padding: 3rem 1rem 4rem;
-}
-
-.contentWidth {
-  max-width: var(--content-width);
-  width: 100%;
-  margin: 0 auto;
-}
-
-.mapInfoInner {
-  width: 100%;
-  margin: 0 auto;
-}
-
-.mapInfo h2 {
-  font-size: 2.2rem;
-  margin: 0 0 1rem;
-}
-
-.mapInfo p {
-  margin: 0 0 1.35rem;
-  color: #b8c2d1;
+.aboutContent p {
   line-height: 1.7;
+  color: #2f2f2f;
 }
 
-.mapInfo p:last-child {
-  margin-bottom: 0;
-}
-
-.mapInfo figure figcaption {
+.aboutContent figure figcaption {
   display: block;
   margin-top: 0.6rem;
   padding: 0.6rem 0.75rem;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 6px;
   font-size: 0.9rem;
-  color: #cbd5e1;
+  color: #4a4a4a;
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .floatSection::after {
@@ -187,6 +261,83 @@ canvas { display: block; width: 100%; height: 100%; }
   margin: 0 1.75rem 1.25rem 0;
 }
 
+.threeWrap {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.threeWrapEmbedded {
+  height: 100%;
+}
+
+.embeddedViewerOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: #1a1a1a;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Google Maps InfoWindow dark theme overrides */
+.gm-style .gm-style-iw-c {
+  background: #d4d4d8 !important;
+  border-radius: 8px !important;
+  padding: 0 !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+}
+
+.gm-style .gm-style-iw-d {
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+.gm-style .gm-style-iw-tc::after {
+  background: #d4d4d8 !important;
+  border-left: 1px solid rgba(0, 0, 0, 0.12) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12) !important;
+}
+
+.gm-style .gm-style-iw-chr button {
+  background: rgba(0, 0, 0, 0.18) !important;
+  border-radius: 50% !important;
+  width: 32px !important;
+  height: 32px !important;
+  opacity: 1 !important;
+}
+
+.gm-style .gm-style-iw-chr button span {
+  margin: 0 !important;
+  width: 18px !important;
+  height: 18px !important;
+  filter: none !important;
+}
+
+.info-window-desc::-webkit-scrollbar {
+  width: 6px;
+}
+
+.info-window-desc::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.info-window-desc::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.info-window-desc {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+}
+
 @media (max-width: 900px) {
   .float-right,
   .float-left {
@@ -194,41 +345,9 @@ canvas { display: block; width: 100%; height: 100%; }
     width: 100%;
     margin: 1rem 0;
   }
-}
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
+  .sidePanel {
+    width: 250px;
+    min-width: 250px;
   }
 }

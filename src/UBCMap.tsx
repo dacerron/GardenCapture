@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps } from "./lib/loadGoogleMaps";
 import { awsClient } from "./lib/awsClient";
+import Viewer from "./Viewer";
 
 type Pin = {
   title: string;
@@ -19,10 +20,18 @@ export default function UBCMap({
   openViewer,
   mapLoaded,
   setMapLoaded,
+  sidebarCollapsed,
+  setSidebarCollapsed,
+  activeViewer,
+  onCloseViewer,
 }: {
   openViewer: (path?: string, markers?: Array<Record<string, unknown>>) => void;
   mapLoaded: boolean;
   setMapLoaded: (loaded: boolean) => void;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (collapsed: boolean | ((current: boolean) => boolean)) => void;
+  activeViewer: { path: string; markers?: Array<Record<string, unknown>> } | null;
+  onCloseViewer: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -146,10 +155,10 @@ export default function UBCMap({
           content.style.minWidth = "380px";
           content.style.maxWidth = "480px";
           content.style.overflow = "hidden";
-          content.style.background = "#1a1f2e";
+          content.style.background = "#d4d4d8";
           content.style.borderRadius = "8px";
-          content.style.border = "1px solid rgba(255, 255, 255, 0.1)";
-          content.style.boxShadow = "0 12px 40px rgba(0, 0, 0, 0.5)";
+          content.style.border = "1px solid rgba(0, 0, 0, 0.12)";
+          content.style.boxShadow = "0 12px 30px rgba(0, 0, 0, 0.2)";
 
           const card = document.createElement("div");
           card.style.display = "flex";
@@ -185,18 +194,18 @@ export default function UBCMap({
           title.textContent = pin.title || "Untitled field";
           title.style.margin = "0";
           title.style.fontSize = "1.25rem";
-          title.style.color = "#e6edf3";
+          title.style.color = "#222222";
           title.style.lineHeight = "1.3";
           title.style.fontWeight = "600";
 
           const coords = document.createElement("div");
           coords.style.fontSize = "0.85rem";
-          coords.style.color = "#9aa4b5";
+          coords.style.color = "#505050";
           coords.style.display = "flex";
           coords.style.gap = "1rem";
           coords.innerHTML = `
-            <span><strong style="color:#b8c2d1">Lat:</strong> ${pin.position.lat.toFixed(5)}</span>
-            <span><strong style="color:#b8c2d1">Lng:</strong> ${pin.position.lng.toFixed(5)}</span>
+            <span><strong style="color:#2f2f2f">Lat:</strong> ${pin.position.lat.toFixed(5)}</span>
+            <span><strong style="color:#2f2f2f">Lng:</strong> ${pin.position.lng.toFixed(5)}</span>
           `;
 
           const desc = document.createElement("p");
@@ -206,7 +215,7 @@ export default function UBCMap({
             : "No description available yet.";
           desc.style.margin = "0";
           desc.style.fontSize = "0.9rem";
-          desc.style.color = "#b8c2d1";
+          desc.style.color = "#3a3a3a";
           desc.style.lineHeight = "1.6";
           desc.style.whiteSpace = "pre-wrap";
           desc.style.maxHeight = "6rem";
@@ -221,28 +230,28 @@ export default function UBCMap({
           button.style.borderRadius = "6px";
           button.style.border = "none";
           button.style.cursor = "pointer";
-          button.style.background = "linear-gradient(135deg, #3b82f6 0%, #6366f1 100%)";
-          button.style.color = "#fff";
+          button.style.background = "#9fb57a";
+          button.style.color = "#1d2514";
           button.style.fontSize = "0.95rem";
           button.style.fontWeight = "600";
           button.style.transition = "transform 0.15s, box-shadow 0.15s";
-          button.style.boxShadow = "0 4px 12px rgba(59, 130, 246, 0.3)";
+          button.style.boxShadow = "0 4px 10px rgba(0, 0, 0, 0.2)";
           if (!pin.path) {
             button.style.opacity = "0.5";
             button.style.cursor = "not-allowed";
-            button.style.background = "#3a4255";
+            button.style.background = "#b7b7bb";
             button.style.boxShadow = "none";
             button.disabled = true;
           }
           button.onmouseenter = () => {
             if (pin.path) {
               button.style.transform = "translateY(-1px)";
-              button.style.boxShadow = "0 6px 20px rgba(59, 130, 246, 0.4)";
+              button.style.boxShadow = "0 6px 14px rgba(0, 0, 0, 0.25)";
             }
           };
           button.onmouseleave = () => {
             button.style.transform = "translateY(0)";
-            button.style.boxShadow = "0 4px 12px rgba(59, 130, 246, 0.3)";
+            button.style.boxShadow = "0 4px 10px rgba(0, 0, 0, 0.2)";
           };
 
           body.appendChild(title);
@@ -267,7 +276,13 @@ export default function UBCMap({
           });
 
           button.addEventListener("click", () => {
-            if (pin.path) openViewer(pin.path, pin.markers);
+            if (pin.path) {
+              if (infoWindowRef.current) {
+                infoWindowRef.current.close();
+                infoWindowRef.current = null;
+              }
+              openViewer(pin.path, pin.markers);
+            }
           });
 
           infoWindowRef.current = infoWindow;
@@ -359,153 +374,73 @@ export default function UBCMap({
   };
 
   return (
-    <div style={{ width: "min(1100px, 100%)", margin: "0 auto", display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-      {/* Side Menu */}
-      <aside
-        style={{
-          width: "240px",
-          flexShrink: 0,
-          backgroundColor: "rgba(255, 255, 255, 0.06)",
-          borderRadius: 6,
-          padding: "1rem",
-          height: "60vh",
-          overflowY: "auto",
-          border: "1px solid rgba(255, 255, 255, 0.08)",
-          boxSizing: "border-box",
-        }}
-      >
-        <h3 style={{ margin: "0 0 0.75rem 0", fontSize: "1.1rem", color: "#e6edf3", fontWeight: 600 }}>
-          Locations
-        </h3>
-        <input
-          type="text"
-          placeholder="Search locations..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            width: "100%",
-            padding: "0.5rem 0.75rem",
-            marginBottom: "0.75rem",
-            borderRadius: "4px",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            backgroundColor: "rgba(255, 255, 255, 0.04)",
-            color: "#e6edf3",
-            fontSize: "0.875rem",
-            outline: "none",
-            boxSizing: "border-box",
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.2)";
-            e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.08)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)";
-            e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.04)";
-          }}
-        />
-        {pins.length === 0 ? (
-          <div style={{ color: "#9aa4b5", fontSize: "0.9rem", padding: "1rem 0" }}>
-            Loading locations...
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-            {pins
-              .map((pin, index) => ({ pin, index }))
-              .filter(({ pin }) =>
-                (pin.title || "").toLowerCase().includes(searchQuery.toLowerCase())
-              )
-              .map(({ pin, index }) => (
-              <button
-                key={index}
-                className="location-btn"
-                onClick={() => handlePinMenuClick(index)}
-                style={{
-                  padding: "0.5rem 0.75rem",
-                  borderRadius: "4px",
-                  border: "none",
-                  backgroundColor: selectedPinIndex === index ? "rgba(255, 255, 255, 0.1)" : "rgba(255, 255, 255, 0.04)",
-                  color: selectedPinIndex === index ? "#fff" : "#b8c2d1",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontSize: "0.875rem",
-                  fontWeight: selectedPinIndex === index ? 500 : 400,
-                  transition: "background-color 0.15s, color 0.15s",
-                  outline: "none",
-                  boxShadow: "none",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.1)";
-                  e.currentTarget.style.color = "#fff";
-                }}
-                onMouseLeave={(e) => {
-                  if (selectedPinIndex !== index) {
-                    e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.04)";
-                    e.currentTarget.style.color = "#b8c2d1";
-                  } else {
-                    e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.1)";
-                  }
-                }}
-              >
-                {pin.title || `Location ${index + 1}`}
-              </button>
-            ))}
-            {pins.filter((pin) =>
-              (pin.title || "").toLowerCase().includes(searchQuery.toLowerCase())
-            ).length === 0 && searchQuery && (
-              <div style={{ color: "#9aa4b5", fontSize: "0.85rem", padding: "0.5rem 0", textAlign: "center" }}>
-                No locations found
+    <section className="viewerPane">
+      <aside className={`sidePanel ${sidebarCollapsed ? "collapsed" : ""}`}>
+        <button
+          type="button"
+          className="collapseToggle"
+          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={() => setSidebarCollapsed((current) => !current)}
+        >
+          {sidebarCollapsed ? ">" : "<"}
+        </button>
+
+        {!sidebarCollapsed && (
+          <>
+            <h2 className="sidePanelTitle">Virtual Soil Library</h2>
+            <input
+              type="text"
+              className="locationSearch"
+              placeholder="Search locations..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {pins.length === 0 ? (
+              <div className="sidePanelStatus">Loading locations...</div>
+            ) : (
+              <div className="sidePanelList">
+                {pins
+                  .map((pin, index) => ({ pin, index }))
+                  .filter(({ pin }) =>
+                    (pin.title || "").toLowerCase().includes(searchQuery.toLowerCase())
+                  )
+                  .map(({ pin, index }) => (
+                    <button
+                      key={index}
+                      className={`locationItem ${selectedPinIndex === index ? "active" : ""}`}
+                      onClick={() => handlePinMenuClick(index)}
+                    >
+                      {pin.title || `Location ${index + 1}`}
+                    </button>
+                  ))}
+                {pins.filter((pin) =>
+                  (pin.title || "").toLowerCase().includes(searchQuery.toLowerCase())
+                ).length === 0 &&
+                  searchQuery && <div className="sidePanelStatus">No locations found</div>}
               </div>
             )}
-          </div>
+          </>
         )}
       </aside>
 
-      {/* Map Container */}
-      <div
-        style={{
-          flex: 1,
-          height: "60vh",
-          borderRadius: 6,
-          position: "relative",
-          minWidth: 0,
-        }}
-      >
-        <div
-          ref={containerRef}
-          style={{ width: "100%", height: "100%", borderRadius: 6 }}
-        />
+      <div className="mapPane">
+        <div ref={containerRef} className="mapFrame" />
         {!mapLoaded && (
-          <div
-            onClick={() => setMapLoaded(true)}
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              backgroundColor: "#4a5568",
-              borderRadius: 6,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              userSelect: "none",
-              color: "#e2e8f0",
-              fontSize: "1.25rem",
-              fontWeight: 500,
-              transition: "background-color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#5a6578";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#4a5568";
-            }}
-          >
+          <div onClick={() => setMapLoaded(true)} className="mapLoadPrompt">
             Click to load map
           </div>
         )}
+        {activeViewer && (
+          <div className="embeddedViewerOverlay">
+            <Viewer
+              gaussianPath={activeViewer.path}
+              markers={activeViewer.markers}
+              onBack={onCloseViewer}
+              embedded
+            />
+          </div>
+        )}
       </div>
-    </div>
+    </section>
   );
 }

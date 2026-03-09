@@ -22,6 +22,7 @@ export type ViewerProps = {
   gaussianPath?: string;
   markers?: Array<Record<string, unknown>>;
   onBack?: () => void;
+  embedded?: boolean;
 };
 
 const resolveAssetUrl = (raw: string) => {
@@ -41,7 +42,7 @@ const parseMarkers = (raw: string | null): MarkerPayload[] => {
   }
 };
 
-export default function Viewer({ gaussianPath, markers, onBack }: ViewerProps = {}) {
+export default function Viewer({ gaussianPath, markers, onBack, embedded }: ViewerProps = {}) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
 
@@ -111,10 +112,10 @@ export default function Viewer({ gaussianPath, markers, onBack }: ViewerProps = 
     }
 
     return () => app.dispose();
-  }, [location.search]);
+  }, [location.search, gaussianPath, markers]);
 
   return (
-    <div className="threeWrap" ref={wrapRef}>
+    <div className={`threeWrap ${embedded ? "threeWrapEmbedded" : ""}`} ref={wrapRef}>
       {onBack && (
         <button
           onClick={onBack}
