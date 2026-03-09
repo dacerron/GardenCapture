@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps } from "./lib/loadGoogleMaps";
 import { awsClient } from "./lib/awsClient";
+import Viewer from "./Viewer";
 
 type Pin = {
   title: string;
@@ -21,12 +22,16 @@ export default function UBCMap({
   setMapLoaded,
   sidebarCollapsed,
   setSidebarCollapsed,
+  activeViewer,
+  onCloseViewer,
 }: {
   openViewer: (path?: string, markers?: Array<Record<string, unknown>>) => void;
   mapLoaded: boolean;
   setMapLoaded: (loaded: boolean) => void;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean | ((current: boolean) => boolean)) => void;
+  activeViewer: { path: string; markers?: Array<Record<string, unknown>> } | null;
+  onCloseViewer: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -150,10 +155,10 @@ export default function UBCMap({
           content.style.minWidth = "380px";
           content.style.maxWidth = "480px";
           content.style.overflow = "hidden";
-          content.style.background = "#1a1f2e";
+          content.style.background = "#d4d4d8";
           content.style.borderRadius = "8px";
-          content.style.border = "1px solid rgba(255, 255, 255, 0.1)";
-          content.style.boxShadow = "0 12px 40px rgba(0, 0, 0, 0.5)";
+          content.style.border = "1px solid rgba(0, 0, 0, 0.12)";
+          content.style.boxShadow = "0 12px 30px rgba(0, 0, 0, 0.2)";
 
           const card = document.createElement("div");
           card.style.display = "flex";
@@ -189,18 +194,18 @@ export default function UBCMap({
           title.textContent = pin.title || "Untitled field";
           title.style.margin = "0";
           title.style.fontSize = "1.25rem";
-          title.style.color = "#e6edf3";
+          title.style.color = "#222222";
           title.style.lineHeight = "1.3";
           title.style.fontWeight = "600";
 
           const coords = document.createElement("div");
           coords.style.fontSize = "0.85rem";
-          coords.style.color = "#9aa4b5";
+          coords.style.color = "#505050";
           coords.style.display = "flex";
           coords.style.gap = "1rem";
           coords.innerHTML = `
-            <span><strong style="color:#b8c2d1">Lat:</strong> ${pin.position.lat.toFixed(5)}</span>
-            <span><strong style="color:#b8c2d1">Lng:</strong> ${pin.position.lng.toFixed(5)}</span>
+            <span><strong style="color:#2f2f2f">Lat:</strong> ${pin.position.lat.toFixed(5)}</span>
+            <span><strong style="color:#2f2f2f">Lng:</strong> ${pin.position.lng.toFixed(5)}</span>
           `;
 
           const desc = document.createElement("p");
@@ -210,7 +215,7 @@ export default function UBCMap({
             : "No description available yet.";
           desc.style.margin = "0";
           desc.style.fontSize = "0.9rem";
-          desc.style.color = "#b8c2d1";
+          desc.style.color = "#3a3a3a";
           desc.style.lineHeight = "1.6";
           desc.style.whiteSpace = "pre-wrap";
           desc.style.maxHeight = "6rem";
@@ -225,28 +230,28 @@ export default function UBCMap({
           button.style.borderRadius = "6px";
           button.style.border = "none";
           button.style.cursor = "pointer";
-          button.style.background = "linear-gradient(135deg, #3b82f6 0%, #6366f1 100%)";
-          button.style.color = "#fff";
+          button.style.background = "#9fb57a";
+          button.style.color = "#1d2514";
           button.style.fontSize = "0.95rem";
           button.style.fontWeight = "600";
           button.style.transition = "transform 0.15s, box-shadow 0.15s";
-          button.style.boxShadow = "0 4px 12px rgba(59, 130, 246, 0.3)";
+          button.style.boxShadow = "0 4px 10px rgba(0, 0, 0, 0.2)";
           if (!pin.path) {
             button.style.opacity = "0.5";
             button.style.cursor = "not-allowed";
-            button.style.background = "#3a4255";
+            button.style.background = "#b7b7bb";
             button.style.boxShadow = "none";
             button.disabled = true;
           }
           button.onmouseenter = () => {
             if (pin.path) {
               button.style.transform = "translateY(-1px)";
-              button.style.boxShadow = "0 6px 20px rgba(59, 130, 246, 0.4)";
+              button.style.boxShadow = "0 6px 14px rgba(0, 0, 0, 0.25)";
             }
           };
           button.onmouseleave = () => {
             button.style.transform = "translateY(0)";
-            button.style.boxShadow = "0 4px 12px rgba(59, 130, 246, 0.3)";
+            button.style.boxShadow = "0 4px 10px rgba(0, 0, 0, 0.2)";
           };
 
           body.appendChild(title);
@@ -271,7 +276,13 @@ export default function UBCMap({
           });
 
           button.addEventListener("click", () => {
-            if (pin.path) openViewer(pin.path, pin.markers);
+            if (pin.path) {
+              if (infoWindowRef.current) {
+                infoWindowRef.current.close();
+                infoWindowRef.current = null;
+              }
+              openViewer(pin.path, pin.markers);
+            }
           });
 
           infoWindowRef.current = infoWindow;
@@ -413,16 +424,20 @@ export default function UBCMap({
       </aside>
 
       <div className="mapPane">
-        <div
-          ref={containerRef}
-          className="mapFrame"
-        />
+        <div ref={containerRef} className="mapFrame" />
         {!mapLoaded && (
-          <div
-            onClick={() => setMapLoaded(true)}
-            className="mapLoadPrompt"
-          >
+          <div onClick={() => setMapLoaded(true)} className="mapLoadPrompt">
             Click to load map
+          </div>
+        )}
+        {activeViewer && (
+          <div className="embeddedViewerOverlay">
+            <Viewer
+              gaussianPath={activeViewer.path}
+              markers={activeViewer.markers}
+              onBack={onCloseViewer}
+              embedded
+            />
           </div>
         )}
       </div>

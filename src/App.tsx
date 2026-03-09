@@ -1,7 +1,6 @@
 import { useState } from "react";
 import "./index.css";
 import UBCMap from "./UBCMap";
-import Viewer from "./Viewer";
 
 type ViewerState = {
   path: string;
@@ -14,6 +13,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"viewer" | "about">("viewer");
   const [viewerSidebarCollapsed, setViewerSidebarCollapsed] = useState(false);
   const [aboutSidebarCollapsed, setAboutSidebarCollapsed] = useState(false);
+  const activeSidebarCollapsed =
+    activeTab === "viewer" ? viewerSidebarCollapsed : aboutSidebarCollapsed;
 
   const openViewer = (path?: string, markers?: Array<Record<string, unknown>>) => {
     if (!path) return;
@@ -24,42 +25,32 @@ export default function App() {
     setViewerState(null);
   };
 
-  // When viewing, show the embedded viewer instead of the main page
-  if (viewerState) {
-    return (
-      <Viewer
-        gaussianPath={viewerState.path}
-        markers={viewerState.markers}
-        onBack={closeViewer}
-      />
-    );
-  }
-
   return (
     <div className="appShell">
       <header className="appHeader">
-        <div className="tabList" role="tablist" aria-label="Virtual Soil sections">
-          <button
-            type="button"
-            className={`appTab ${activeTab === "viewer" ? "active" : ""}`}
-            onClick={() => setActiveTab("viewer")}
-            role="tab"
-            aria-selected={activeTab === "viewer"}
-          >
-            Viewer
-          </button>
-          <button
-            type="button"
-            className={`appTab ${activeTab === "about" ? "active" : ""}`}
-            onClick={() => setActiveTab("about")}
-            role="tab"
-            aria-selected={activeTab === "about"}
-          >
-            About
-          </button>
-        </div>
+        {!activeSidebarCollapsed && (
+          <div className="tabList" role="tablist" aria-label="Virtual Soil sections">
+            <button
+              type="button"
+              className={`appTab ${activeTab === "viewer" ? "active" : ""}`}
+              onClick={() => setActiveTab("viewer")}
+              role="tab"
+              aria-selected={activeTab === "viewer"}
+            >
+              Viewer
+            </button>
+            <button
+              type="button"
+              className={`appTab ${activeTab === "about" ? "active" : ""}`}
+              onClick={() => setActiveTab("about")}
+              role="tab"
+              aria-selected={activeTab === "about"}
+            >
+              About
+            </button>
+          </div>
+        )}
         <h1 className="appTitle">Virtual Soils</h1>
-        <div className="headerSpacer" aria-hidden />
       </header>
 
       <main className="tabContent">
@@ -70,6 +61,8 @@ export default function App() {
             setMapLoaded={setMapLoaded}
             sidebarCollapsed={viewerSidebarCollapsed}
             setSidebarCollapsed={setViewerSidebarCollapsed}
+            activeViewer={viewerState}
+            onCloseViewer={closeViewer}
           />
         ) : (
           <section className="aboutPane">
