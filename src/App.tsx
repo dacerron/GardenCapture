@@ -15,8 +15,8 @@ export default function App() {
   const [infoSidebarCollapsed, setInfoSidebarCollapsed] = useState(false);
   const activeSidebarCollapsed = activeTab === "map" ? mapSidebarCollapsed : infoSidebarCollapsed;
   const tabToggleIcon = activeSidebarCollapsed
-    ? "/assets/icons/icon_tab.png"
-    : "/assets/icons/icon_tab_select.png";
+    ? "/assets/icons/icon_right.png"
+    : "/assets/icons/icon_left.png";
   const infoIcon = activeTab === "info" ? "/assets/icons/icon_info_select.png" : "/assets/icons/icon_info.png";
   const mapIcon = activeTab === "map" ? "/assets/icons/icon_map_select.png" : "/assets/icons/icon_map.png";
 
