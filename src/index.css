@@ -174,7 +174,12 @@ input {
   cursor: pointer;
 }
 
-.locationItem.active,
+.locationItem.active {
+  background: #ffd25f;
+  color: #2b1a00;
+  box-shadow: inset 0 0 0 2px rgba(78, 44, 0, 0.35);
+}
+
 .locationItem:hover,
 .sidePanelList a:hover {
   background: #f5eee8;
@@ -213,7 +218,7 @@ input {
 
 .selectedPinBody h2 {
   margin: 0 0 0.3rem;
-  font-size: 2.65rem;
+  font-size: 1.5rem;
   line-height: 1.02;
   color: #111;
 }
@@ -222,6 +227,11 @@ input {
   margin: 0.08rem 0;
   font-size: 0.9rem;
   color: #2f2f2f;
+  font-weight: 400;
+}
+
+.selectedPinMetaLabel {
+  font-weight: 700;
 }
 
 .selectedPinDescription {
@@ -367,7 +377,7 @@ canvas {
   }
 
   .selectedPinBody h2 {
-    font-size: 1.7rem;
+    font-size: 1.5rem;
   }
 
   .enterFieldButton {

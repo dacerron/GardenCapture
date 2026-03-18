@@ -44,6 +44,7 @@ export default function UBCMap({
   const pinToMarkerRef = useRef<Map<number, google.maps.Marker>>(new Map());
   const [pins, setPins] = useState<Pin[]>([]);
   const [selectedPinIndex, setSelectedPinIndex] = useState<number | null>(null);
+  const [hoveredPinIndex, setHoveredPinIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const selectedPin = selectedPinIndex !== null ? pins[selectedPinIndex] : null;
   const filteredPins = pins
@@ -157,6 +158,7 @@ export default function UBCMap({
       google.maps.event.clearListeners(mapRef.current, "click");
       mapRef.current.addListener("click", () => {
         setSelectedPinIndex(null);
+        setHoveredPinIndex(null);
         if (infoWindowRef.current) {
           infoWindowRef.current.close();
           infoWindowRef.current = null;
@@ -178,6 +180,7 @@ export default function UBCMap({
 
         const handleClick = () => {
           setSelectedPinIndex(index);
+          setHoveredPinIndex(null);
 
           if (infoWindowRef.current) {
             infoWindowRef.current.close();
@@ -306,6 +309,12 @@ export default function UBCMap({
         };
 
         marker.addListener("click", handleClick);
+        marker.addListener("mouseover", () => {
+          setHoveredPinIndex(index);
+        });
+        marker.addListener("mouseout", () => {
+          setHoveredPinIndex((current) => (current === index ? null : current));
+        });
         markersRef.current.push(marker);
       });
     })();
@@ -330,6 +339,7 @@ export default function UBCMap({
   };
 
   const handlePinMenuClick = (index: number) => {
+    setHoveredPinIndex(null);
     const triggerMarkerSelection = () => {
       const marker = pinToMarkerRef.current.get(index);
       if (!marker) return false;
@@ -375,8 +385,8 @@ export default function UBCMap({
                 </div>
                 <div className="selectedPinBody">
                   <h2>{selectedPin.title || "Untitled field"}</h2>
-                  <p className="selectedPinMeta">Location: {selectedPin.title || "Unknown field"}</p>
                   <p className="selectedPinMeta">
+                    <span className="selectedPinMetaLabel">Coordinates:</span>{" "}
                     {selectedPin.position.lat.toFixed(4)}, {selectedPin.position.lng.toFixed(4)}
                   </p>
                   <p className="selectedPinDescription">
@@ -402,7 +412,9 @@ export default function UBCMap({
                     {filteredPins.map(({ pin, index }) => (
                       <button
                         key={index}
-                        className={`locationItem ${selectedPinIndex === index ? "active" : ""}`}
+                        className={`locationItem ${
+                          selectedPinIndex === index || hoveredPinIndex === index ? "active" : ""
+                        }`}
                         onClick={() => handlePinMenuClick(index)}
                       >
                         {pin.title || `Location ${index + 1}`}
