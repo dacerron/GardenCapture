@@ -160,6 +160,7 @@ input {
 .locationItem,
 .sidePanelList a {
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   display: block;
   padding: 0.75rem 0.8rem;
@@ -172,6 +173,9 @@ input {
   font-style: italic;
   font-weight: 600;
   cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .locationItem.active {
@@ -256,6 +260,12 @@ input {
   height: 100%;
 }
 
+/* Leaflet only: allow map container to shrink inside flex (no other layout changes) */
+.mapFrame.leaflet-container {
+  min-width: 0;
+  min-height: 0;
+}
+
 .mapLoadPrompt {
   position: absolute;
   inset: 0;
@@ -330,10 +340,11 @@ input {
   height: 100%;
 }
 
+/* Above Leaflet panes (tile 200, overlay 400, marker 600, popup 700, controls 1000) */
 .embeddedViewerOverlay {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 1100;
   background: #1a1a1a;
 }
 
