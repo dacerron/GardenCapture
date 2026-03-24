@@ -144,6 +144,14 @@ function formatCoordinateForInput(value: number | undefined): string {
   return numericValue.toFixed(2);
 }
 
+function roundCoordinate(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function isCoordinateDraft(value: string): boolean {
+  return /^-?\d*(?:\.\d*)?$/.test(value.trim());
+}
+
 function parseMarkerFormParam(raw: string | null): EditorMarker | null {
   if (!raw) return null;
   try {
@@ -193,6 +201,7 @@ export default function Editor() {
   const [fieldError, setFieldError] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState("");
+  const [positionDrafts, setPositionDrafts] = useState<[string, string, string]>(["0.00", "0.00", "0.00"]);
 
   const syncMarkersToApp = useCallback(() => {
     if (!appRef.current) return;
@@ -325,6 +334,20 @@ export default function Editor() {
   }, [syncMarkersToApp]);
 
   useEffect(() => {
+    if (selectedMarkerIndex === null || !markers[selectedMarkerIndex]) {
+      setPositionDrafts(["0.00", "0.00", "0.00"]);
+      return;
+    }
+
+    const selectedMarker = markers[selectedMarkerIndex];
+    setPositionDrafts([
+      formatCoordinateForInput(selectedMarker.position[0]),
+      formatCoordinateForInput(selectedMarker.position[1]),
+      formatCoordinateForInput(selectedMarker.position[2]),
+    ]);
+  }, [selectedMarkerIndex]);
+
+  useEffect(() => {
     if (!appRef.current) return;
 
     if (mode === "preview") {
@@ -397,6 +420,53 @@ export default function Editor() {
   }, [fieldId, markers]);
 
   const selectedMarker = selectedMarkerIndex !== null ? markers[selectedMarkerIndex] : null;
+
+  const handlePositionDraftChange = (axisIndex: number, value: string) => {
+    if (!isCoordinateDraft(value)) return;
+
+    setPositionDrafts((prev) => {
+      const next = [...prev] as [string, string, string];
+      next[axisIndex] = value;
+      return next;
+    });
+  };
+
+  const commitPositionDraft = (axisIndex: number) => {
+    if (selectedMarkerIndex === null) return;
+
+    const draftValue = positionDrafts[axisIndex];
+    const parsedValue = toFiniteNumber(draftValue);
+
+    if (parsedValue === null) {
+      const fallbackValue = selectedMarker?.position[axisIndex];
+      setPositionDrafts((prev) => {
+        const next = [...prev] as [string, string, string];
+        next[axisIndex] = formatCoordinateForInput(fallbackValue);
+        return next;
+      });
+      return;
+    }
+
+    const roundedValue = roundCoordinate(parsedValue);
+    setMarkers((prev) => {
+      const next = [...prev];
+      const marker = next[selectedMarkerIndex];
+      if (!marker) return prev;
+      const position = [...marker.position] as [number, number, number];
+      position[axisIndex] = roundedValue;
+      next[selectedMarkerIndex] = { ...marker, position };
+      return next;
+    });
+    setPositionDrafts((prev) => {
+      const next = [...prev] as [string, string, string];
+      next[axisIndex] = formatCoordinateForInput(roundedValue);
+      return next;
+    });
+  };
+
+  const handlePositionDraftBlur = (axisIndex: number) => {
+    commitPositionDraft(axisIndex);
+  };
 
   return (
     <div className="threeWrap" style={{ display: "flex", flexDirection: "row" }}>
@@ -678,18 +748,17 @@ export default function Editor() {
                   <div key={axis}>
                     <label style={{ fontSize: "0.75rem", color: "#9aa4b5" }}>{axis.toUpperCase()}</label>
                     <input
-                      type="number"
-                      step={0.01}
-                      value={formatCoordinateForInput(selectedMarker.position[i])}
-                      onChange={(e) =>
-                        setMarkers((prev) => {
-                          const next = [...prev];
-                          const pos = [...(next[selectedMarkerIndex].position ?? [0, 0, 0])] as [number, number, number];
-                          pos[i] = Number(e.target.value);
-                          next[selectedMarkerIndex] = { ...next[selectedMarkerIndex], position: pos };
-                          return next;
-                        })
-                      }
+                      type="text"
+                      inputMode="decimal"
+                      value={positionDrafts[i]}
+                      onChange={(e) => handlePositionDraftChange(i, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          commitPositionDraft(i);
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      onBlur={() => handlePositionDraftBlur(i)}
                       style={{
                         width: "100%",
                         padding: "0.35rem 0.4rem",
