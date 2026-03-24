@@ -171,32 +171,14 @@ export default function UBCMap({
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const pinToMarkerRef = useRef<Map<number, L.Marker>>(new Map());
+  const pendingPopupPinIndexRef = useRef<number | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
   const [selectedPinIndex, setSelectedPinIndex] = useState<number | null>(null);
-  const [hoveredPinIndex, setHoveredPinIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const selectedPin = selectedPinIndex !== null ? pins[selectedPinIndex] : null;
   const filteredPins = pins
     .map((pin, index) => ({ pin, index }))
     .filter(({ pin }) => (pin.title || "").toLowerCase().includes(searchQuery.toLowerCase()));
-
-  const smoothFocusPin = (position: any, targetZoom = 15) => {
-    if (!mapRef.current) return;
-    const map = mapRef.current;
-    map.panTo(position);
-
-    const stepZoom = () => {
-      const currentZoom = map.getZoom();
-      if (typeof currentZoom !== "number" || currentZoom === targetZoom) return;
-      const nextZoom = currentZoom < targetZoom ? currentZoom + 1 : currentZoom - 1;
-      map.setZoom(nextZoom);
-      if (nextZoom !== targetZoom) {
-        setTimeout(stepZoom, 90);
-      }
-    };
-
-    setTimeout(stepZoom, 180);
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -316,50 +298,56 @@ export default function UBCMap({
     };
   }, [pins, mapLoaded, openViewer]);
 
-  const panToWithOffset = (map: L.Map, latLng: L.LatLng) => {
-    const bounds = map.getBounds();
-    if (!bounds) {
-      map.panTo(latLng);
-      return;
-    }
-    const north = bounds.getNorth();
-    const south = bounds.getSouth();
-    const latSpan = north - south;
-    const offsetLat = latLng.lat + latSpan * 0.25;
-    map.panTo([offsetLat, latLng.lng]);
+  const getOffsetCenter = (map: L.Map, latLng: L.LatLng, targetZoom = 15) => {
+    const mapSize = map.getSize();
+    const markerPoint = map.project(latLng, targetZoom);
+    const targetCenterPoint = markerPoint.subtract([0, mapSize.y * 0.25]);
+    return map.unproject(targetCenterPoint, targetZoom);
   };
 
-  const runPanZoomAndOpenPopup = (map: L.Map, marker: L.Marker) => {
+  const focusMarkerAndOpenPopup = (map: L.Map, marker: L.Marker) => {
     const latLng = marker.getLatLng();
-    map.setZoom(15);
-    map.once("moveend", () => {
-      panToWithOffset(map, latLng);
-      map.once("moveend", () => marker.openPopup());
-    });
+    const targetZoom = 15;
+    const targetCenter = getOffsetCenter(map, latLng, targetZoom);
+    const alreadyFocused =
+      map.getZoom() === targetZoom && map.getCenter().distanceTo(targetCenter) < 1;
+
+    if (alreadyFocused) {
+      marker.openPopup();
+      return;
+    }
+
+    map.closePopup();
+    map.once("moveend", () => marker.openPopup());
+    map.setView(targetCenter, targetZoom, { animate: true });
   };
+
+  useEffect(() => {
+    const pendingIndex = pendingPopupPinIndexRef.current;
+    const map = mapRef.current;
+    if (pendingIndex === null || !map) return;
+
+    const marker = pinToMarkerRef.current.get(pendingIndex);
+    if (!marker) return;
+
+    pendingPopupPinIndexRef.current = null;
+    focusMarkerAndOpenPopup(map, marker);
+  }, [pins, mapLoaded]);
 
   const handlePinMenuClick = (index: number) => {
     setSelectedPinIndex(index);
+    pendingPopupPinIndexRef.current = index;
 
     if (!mapLoaded) {
       setMapLoaded(true);
-      const checkAndClick = () => {
-        const marker = pinToMarkerRef.current.get(index);
-        const map = mapRef.current;
-        if (marker && map) {
-          map.panTo(marker.getLatLng());
-          map.once("moveend", () => runPanZoomAndOpenPopup(map, marker));
-        } else {
-          setTimeout(checkAndClick, 100);
-        }
-      };
       return;
     }
 
     const marker = pinToMarkerRef.current.get(index);
     const map = mapRef.current;
     if (marker && map) {
-      runPanZoomAndOpenPopup(map, marker);
+      pendingPopupPinIndexRef.current = null;
+      focusMarkerAndOpenPopup(map, marker);
     }
   };
 
@@ -409,8 +397,7 @@ export default function UBCMap({
                     {filteredPins.map(({ pin, index }) => (
                       <button
                         key={index}
-                        className={`locationItem ${selectedPinIndex === index || hoveredPinIndex === index ? "active" : ""
-                          }`}
+                        className={`locationItem ${selectedPinIndex === index ? "active" : ""}`}
                         onClick={() => handlePinMenuClick(index)}
                       >
                         {pin.title || `Location ${index + 1}`}
