@@ -214,6 +214,7 @@ export default function Editor() {
   const [markers, setMarkers] = useState<EditorMarker[]>([]);
   const [mode, setMode] = useState<"preview" | "place" | "edit">("preview");
   const [editTarget, setEditTarget] = useState<"marker" | "interest" | null>(null);
+  const prevModeRef = useRef<typeof mode>(mode);
   const [placementDistance, setPlacementDistance] = useState(PLACEMENT_DISTANCE_DEFAULT);
   const [selectedMarkerIndex, setSelectedMarkerIndex] = useState<number | null>(null);
   const [placementIconIndex, setPlacementIconIndex] = useState(0);
@@ -287,7 +288,7 @@ export default function Editor() {
       const singleMarker = parseMarkerFormParam(markerParam);
       if (singleMarker) {
         setMarkers([singleMarker]);
-        setSelectedMarkerIndex(0);
+        setSelectedMarkerIndex(null);
       }
     }
 
@@ -327,7 +328,7 @@ export default function Editor() {
         const backendMarkers = Array.isArray(field.markers) ? (field.markers as MarkerPayload[]) : [];
         const nextMarkers = backendMarkersToEditorMarkers(backendMarkers);
         setMarkers(nextMarkers);
-        const nextSelectedIndex = nextMarkers.length ? 0 : null;
+        const nextSelectedIndex = null;
         setSelectedMarkerIndex(nextSelectedIndex);
         setEditTarget(nextSelectedIndex !== null ? "marker" : null);
         if (!gaussianPathParam) {
@@ -380,6 +381,14 @@ export default function Editor() {
       formatCoordinateForInput(selectedMarker.position[2]),
     ]);
   }, [selectedMarkerIndex]);
+
+  useEffect(() => {
+    if (mode === "edit" && prevModeRef.current !== "edit") {
+      setSelectedMarkerIndex(null);
+      setEditTarget(null);
+    }
+    prevModeRef.current = mode;
+  }, [mode]);
 
   useEffect(() => {
     if (!appRef.current) return;
