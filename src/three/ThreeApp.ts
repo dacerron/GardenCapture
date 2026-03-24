@@ -498,9 +498,12 @@ export class ThreeApp {
   }
 
   private setControlMode(mode: ControlMode) {
-    if (mode === this.controlMode) return;
+    if (mode === this.controlMode) {
+      this.syncControlModeUi(mode);
+      return;
+    }
     this.controlMode = mode;
-    this.screenUI.setControlMode(mode);
+    this.syncControlModeUi(mode);
 
     if (mode === "orbit") {
       this.flyControls?.dispose();
@@ -515,7 +518,6 @@ export class ThreeApp {
 
       this.orbitControls.target.set(0, 0, 0);
       this.orbitControls.update();
-      this.screenUI.setSpeedControlEnabled(false);
       this.renderer.domElement.style.cursor = "grab";
       return;
     }
@@ -527,7 +529,12 @@ export class ThreeApp {
     this.flyControls.setFlySpeed(this.flySpeed);
     this.flyControls.setBounds(this.playAreaBounds);
     this.screenUI.setSpeed(this.flySpeed);
-    this.screenUI.setSpeedControlEnabled(true);
+  }
+
+  private syncControlModeUi(mode: ControlMode) {
+    this.screenUI.setControlMode(mode);
+    this.screenUI.setSpeed(this.flySpeed);
+    this.screenUI.setSpeedControlEnabled(mode === "fly");
   }
 
   private getClientType(): string {

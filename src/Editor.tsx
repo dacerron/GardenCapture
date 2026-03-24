@@ -139,6 +139,11 @@ function toFiniteNumber(value: unknown): number | null {
   return null;
 }
 
+function formatCoordinateForInput(value: number | undefined): string {
+  const numericValue = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return numericValue.toFixed(2);
+}
+
 function parseMarkerFormParam(raw: string | null): EditorMarker | null {
   if (!raw) return null;
   try {
@@ -327,18 +332,14 @@ export default function Editor() {
       appRef.current.setEditorCallbacks({});
     } else if (mode === "place") {
       appRef.current.setPlacementDistance(placementDistance);
-      appRef.current.setEditorCallbacks({
-        onPlaceClick: () => {
-          placeMarkerAtCurrentPreview();
-        },
-      });
+      appRef.current.setEditorCallbacks({});
     } else {
       appRef.current.setPlacementDistance(0);
       appRef.current.setEditorCallbacks({
         onMarkerClick: (index) => setSelectedMarkerIndex(index),
       });
     }
-  }, [mode, placementDistance, placeMarkerAtCurrentPreview]);
+  }, [mode, placementDistance]);
 
   useEffect(() => {
     const next = pins.length;
@@ -678,8 +679,8 @@ export default function Editor() {
                     <label style={{ fontSize: "0.75rem", color: "#9aa4b5" }}>{axis.toUpperCase()}</label>
                     <input
                       type="number"
-                      step={0.1}
-                      value={selectedMarker.position[i] ?? 0}
+                      step={0.01}
+                      value={formatCoordinateForInput(selectedMarker.position[i])}
                       onChange={(e) =>
                         setMarkers((prev) => {
                           const next = [...prev];
