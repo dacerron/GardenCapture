@@ -71,7 +71,7 @@ export default function App() {
       <div className="appMain">
         <h1 className="appTopTitle">Virtual Soil</h1>
         <main className="tabContent">
-          {activeTab === "map" ? (
+          <section className={`tabPanel ${activeTab === "map" ? "active" : "inactive"}`}>
             <UBCMap
               openViewer={openViewer}
               mapLoaded={mapLoaded}
@@ -80,7 +80,9 @@ export default function App() {
               activeViewer={viewerState}
               onCloseViewer={closeViewer}
             />
-          ) : (
+          </section>
+
+          <section className={`tabPanel ${activeTab === "info" ? "active" : "inactive"}`}>
             <section className="aboutPane">
               <aside className={`sidePanel infoSidePanel ${infoSidebarCollapsed ? "collapsed" : ""}`}>
                 {!infoSidebarCollapsed && (
@@ -96,8 +98,8 @@ export default function App() {
               </aside>
 
               <article className="aboutContent floatSection">
-            {/* WHY */}
-            <h2 id="TheWhy">Why Virtual Soils?</h2>
+                {/* WHY */}
+                <h2 id="TheWhy">Why Virtual Soils?</h2>
 
             <figure className="float-right">
               {}
@@ -359,7 +361,7 @@ export default function App() {
             </p>
               </article>
             </section>
-          )}
+          </section>
         </main>
       </div>
     </div>
