@@ -162,7 +162,6 @@ export default function UBCMap({
   openViewer: (path?: string, markers?: Array<Record<string, unknown>>) => void;
   mapLoaded: boolean;
   setMapLoaded: (loaded: boolean) => void;
-  setSidebarCollapsed: (collapsed: boolean | ((current: boolean) => boolean)) => void;
   sidebarCollapsed: boolean;
   activeViewer: { path: string; markers?: Array<Record<string, unknown>> } | null;
   onCloseViewer: () => void;
@@ -172,6 +171,7 @@ export default function UBCMap({
   const markersRef = useRef<L.Marker[]>([]);
   const pinToMarkerRef = useRef<Map<number, L.Marker>>(new Map());
   const pendingPopupPinIndexRef = useRef<number | null>(null);
+  const selectedPinIndexRef = useRef<number | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
   const [selectedPinIndex, setSelectedPinIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -179,6 +179,10 @@ export default function UBCMap({
   const filteredPins = pins
     .map((pin, index) => ({ pin, index }))
     .filter(({ pin }) => (pin.title || "").toLowerCase().includes(searchQuery.toLowerCase()));
+
+  useEffect(() => {
+    selectedPinIndexRef.current = selectedPinIndex;
+  }, [selectedPinIndex]);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,18 +248,39 @@ export default function UBCMap({
     }).addTo(map);
 
     mapRef.current = map;
-    map.on('click', () => { setSelectedPinIndex(null);})
-     
-    
+    map.on("click", () => {
+      setSelectedPinIndex(null);
+      map.closePopup();
+    });
+
 
     markersRef.current.forEach((m) => map.removeLayer(m));
     markersRef.current = [];
     pinToMarkerRef.current.clear();
 
     pins.forEach((pin, index) => {
-      const marker = L.marker([pin.position.lat, pin.position.lng])
-        .addTo(map)
-        .on("click", () => setSelectedPinIndex(index));
+      let markerHovered = false;
+      let popupHovered = false;
+      let closePopupTimeout: number | null = null;
+
+      const clearClosePopupTimeout = () => {
+        if (closePopupTimeout !== null) {
+          window.clearTimeout(closePopupTimeout);
+          closePopupTimeout = null;
+        }
+      };
+
+      const schedulePopupClose = () => {
+        clearClosePopupTimeout();
+        closePopupTimeout = window.setTimeout(() => {
+          const isSelected = selectedPinIndexRef.current === index;
+          if (!markerHovered && !popupHovered && !isSelected) {
+            marker.closePopup();
+          }
+        }, 90);
+      };
+
+      const marker = L.marker([pin.position.lat, pin.position.lng]).addTo(map);
 
       const content = buildPopupContent(
         pin,
@@ -268,6 +293,48 @@ export default function UBCMap({
         closeButton: false,
         maxWidth: 280,
         minWidth: 280,
+      });
+
+      marker.on("mouseover", () => {
+        markerHovered = true;
+        clearClosePopupTimeout();
+        marker.openPopup();
+      });
+
+      marker.on("mouseout", () => {
+        markerHovered = false;
+        schedulePopupClose();
+      });
+
+      marker.on("popupopen", () => {
+        const popupElement = marker.getPopup()?.getElement();
+        if (!popupElement) return;
+
+        popupElement.onmouseenter = () => {
+          popupHovered = true;
+          clearClosePopupTimeout();
+        };
+
+        popupElement.onmouseleave = () => {
+          popupHovered = false;
+          schedulePopupClose();
+        };
+      });
+
+      marker.on("popupclose", () => {
+        popupHovered = false;
+        clearClosePopupTimeout();
+        const popupElement = marker.getPopup()?.getElement();
+        if (popupElement) {
+          popupElement.onmouseenter = null;
+          popupElement.onmouseleave = null;
+        }
+      });
+
+      marker.on("click", () => {
+        markerHovered = true;
+        clearClosePopupTimeout();
+        handlePinMenuClick(index);
       });
 
       pinToMarkerRef.current.set(index, marker);
@@ -301,7 +368,7 @@ export default function UBCMap({
   const getOffsetCenter = (map: L.Map, latLng: L.LatLng, targetZoom = 15) => {
     const mapSize = map.getSize();
     const markerPoint = map.project(latLng, targetZoom);
-    const targetCenterPoint = markerPoint.subtract([0, mapSize.y * 0.25]);
+    const targetCenterPoint = markerPoint.subtract([0, mapSize.y * 0.12]);
     return map.unproject(targetCenterPoint, targetZoom);
   };
 
