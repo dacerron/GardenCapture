@@ -281,7 +281,12 @@ export default function UBCMap({
         () => marker.closePopup()
       );
 
-      marker.bindPopup(content, { maxWidth: 480, minWidth: 380 });
+      marker.bindPopup(content, {
+        className: "pin-popup",
+        closeButton: false,
+        maxWidth: 280,
+        minWidth: 280,
+      });
 
       pinToMarkerRef.current.set(index, marker);
       markersRef.current.push(marker);

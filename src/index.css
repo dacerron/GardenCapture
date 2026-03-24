@@ -266,6 +266,22 @@ input {
   min-height: 0;
 }
 
+.leaflet-popup.pin-popup .leaflet-popup-content-wrapper {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.leaflet-popup.pin-popup .leaflet-popup-content {
+  margin: 0;
+}
+
+.leaflet-popup.pin-popup .leaflet-popup-tip-container,
+.leaflet-popup.pin-popup .leaflet-popup-close-button {
+  display: none;
+}
+
 .mapLoadPrompt {
   position: absolute;
   inset: 0;
