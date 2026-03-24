@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { FlyControls } from "./FlyControls";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import type { ControlMode, PerformanceSettings } from "./ScreenSpace";
 import { ScreenSpaceUI, PERFORMANCE_PRESETS } from "./ScreenSpace";
 import { GaussianViewer } from "./GaussianViewer";
@@ -64,8 +65,16 @@ export class ThreeApp {
   // Debug
   private worldAxesScene = new THREE.Scene();
   private worldAxes?: THREE.AxesHelper;
+  private transformControls?: TransformControls;
+  private transformControlsHelper?: THREE.Object3D;
   private playAreaBounds: THREE.Box3 | null = null;
   private currentStartPos = new THREE.Vector3(0, 0, 0);
+  private worldAxesVisible = true;
+  private interestPointEditing = false;
+  private onInterestPointChange?: (position: [number, number, number]) => void;
+  private markerEditIndex: number | null = null;
+  private onMarkerPositionCommit?: (position: [number, number, number]) => void;
+  private activeTransformTarget: "interest" | "marker" | null = null;
 
   // cene at reduced res, markers at full res
   private sceneRenderTarget: THREE.WebGLRenderTarget | null = null;
@@ -182,8 +191,52 @@ export class ThreeApp {
       moveThresholdPx: 6,
     });
     this.initSkybox();
-    this.worldAxes = new THREE.AxesHelper(1);
+    this.worldAxes = new THREE.AxesHelper(0.75);
+    const axisMaterials = Array.isArray(this.worldAxes.material)
+      ? this.worldAxes.material
+      : [this.worldAxes.material];
+    for (const material of axisMaterials) {
+      if ("linewidth" in material) {
+        (material as THREE.Material & { linewidth?: number }).linewidth = 3;
+      }
+    }
     this.worldAxesScene.add(this.worldAxes);
+    this.markerPicking.setInterestPointObject(this.worldAxes);
+
+    this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
+    this.transformControls.attach(this.worldAxes);
+    this.transformControls.setMode("translate");
+    this.transformControls.enabled = false;
+    this.transformControlsHelper = this.transformControls.getHelper();
+    this.transformControlsHelper.visible = false;
+    this.transformControls.addEventListener("dragging-changed", (event) => {
+      const isDragging = Boolean((event as { value?: unknown }).value);
+      this.applyInteractionState(isDragging);
+    });
+    this.transformControls.addEventListener("objectChange", () => {
+      if (this.activeTransformTarget === "interest" && this.worldAxes) {
+        this.currentStartPos.copy(this.worldAxes.position);
+        this.orbitControls?.target.copy(this.currentStartPos);
+        this.orbitControls?.update();
+        this.onInterestPointChange?.([
+          this.currentStartPos.x,
+          this.currentStartPos.y,
+          this.currentStartPos.z,
+        ]);
+      }
+    });
+    this.transformControls.addEventListener("mouseUp", () => {
+      if (this.activeTransformTarget !== "marker" || this.markerEditIndex === null) return;
+      const sprite = this.markers.getSpriteAt(this.markerEditIndex);
+      if (!sprite) return;
+      this.onMarkerPositionCommit?.([
+        sprite.position.x,
+        sprite.position.y,
+        sprite.position.z,
+      ]);
+    });
+    this.worldAxesScene.add(this.transformControlsHelper);
+    this.applyInteractionState(false);
   }
 
 
@@ -307,6 +360,7 @@ export class ThreeApp {
     selectedIndex?: Parameters<WorldMarkers["setMarkers"]>[2]
   ) {
     this.markers.setMarkers(markers, previewMarker, selectedIndex);
+    this.syncTransformAttachment();
   }
 
   public setWorldAxesPosition(position: THREE.Vector3 | [number, number, number]) {
@@ -319,6 +373,41 @@ export class ThreeApp {
     this.worldAxes?.position.copy(this.currentStartPos);
     this.orbitControls?.target.copy(this.currentStartPos);
     this.orbitControls?.update();
+  }
+
+  public setWorldAxesVisible(visible: boolean) {
+    this.worldAxesVisible = visible;
+    if (this.worldAxes) {
+      this.worldAxes.visible = visible;
+    }
+  }
+
+  public setInterestPointEditing(
+    enabled: boolean,
+    onChange?: (position: [number, number, number]) => void
+  ) {
+    this.interestPointEditing = enabled;
+    this.onInterestPointChange = enabled ? onChange : undefined;
+    if (enabled) {
+      this.markerEditIndex = null;
+      this.onMarkerPositionCommit = undefined;
+    }
+    this.syncTransformAttachment();
+    this.applyInteractionState(false);
+  }
+
+  public setMarkerEditing(
+    markerIndex: number | null,
+    onCommit?: (position: [number, number, number]) => void
+  ) {
+    this.markerEditIndex = markerIndex;
+    this.onMarkerPositionCommit = markerIndex !== null ? onCommit : undefined;
+    if (markerIndex !== null) {
+      this.interestPointEditing = false;
+      this.onInterestPointChange = undefined;
+    }
+    this.syncTransformAttachment();
+    this.applyInteractionState(false);
   }
 
   public getCamera(): THREE.Camera {
@@ -341,6 +430,7 @@ export class ThreeApp {
   public setEditorCallbacks(callbacks: {
     onMarkerClick?: (index: number) => void;
     onPlaceClick?: () => void;
+    onInterestPointClick?: () => void;
   }) {
     this.markerPicking.setEditorCallbacks(callbacks);
   }
@@ -485,6 +575,10 @@ export class ThreeApp {
       this.blitQuad = null;
     }
 
+    this.transformControls?.dispose();
+    this.transformControls = undefined;
+    this.transformControlsHelper = undefined;
+
     // Dispose controls
     this.flyControls?.dispose();
     this.orbitControls?.dispose();
@@ -531,6 +625,7 @@ export class ThreeApp {
 
       this.orbitControls.target.copy(this.currentStartPos);
       this.orbitControls.update();
+      this.applyInteractionState(false);
       this.renderer.domElement.style.cursor = "grab";
       return;
     }
@@ -542,12 +637,62 @@ export class ThreeApp {
     this.flyControls.setFlySpeed(this.flySpeed);
     this.flyControls.setBounds(this.playAreaBounds);
     this.screenUI.setSpeed(this.flySpeed);
+    this.applyInteractionState(false);
   }
 
   private syncControlModeUi(mode: ControlMode) {
     this.screenUI.setControlMode(mode);
     this.screenUI.setSpeed(this.flySpeed);
     this.screenUI.setSpeedControlEnabled(mode === "fly");
+  }
+
+  private applyInteractionState(isTransformDragging: boolean) {
+    const hasActiveTransformTarget = this.activeTransformTarget !== null;
+
+    if (this.transformControls) {
+      this.transformControls.enabled = hasActiveTransformTarget;
+    }
+    if (this.transformControlsHelper) {
+      this.transformControlsHelper.visible =
+        this.activeTransformTarget === "interest"
+          ? this.worldAxesVisible
+          : this.activeTransformTarget === "marker";
+    }
+    if (this.worldAxes) {
+      this.worldAxes.visible = this.worldAxesVisible;
+    }
+
+    this.markerPicking?.setEnabled(!isTransformDragging);
+
+    if (this.orbitControls) {
+      this.orbitControls.enabled = !isTransformDragging;
+    }
+
+    this.flyControls?.setEnabled(
+      this.controlMode === "fly" && !isTransformDragging
+    );
+  }
+
+  private syncTransformAttachment() {
+    if (!this.transformControls) return;
+
+    if (this.interestPointEditing && this.worldAxes) {
+      this.transformControls.attach(this.worldAxes);
+      this.activeTransformTarget = "interest";
+      return;
+    }
+
+    if (this.markerEditIndex !== null) {
+      const sprite = this.markers.getSpriteAt(this.markerEditIndex);
+      if (sprite) {
+        this.transformControls.attach(sprite);
+        this.activeTransformTarget = "marker";
+        return;
+      }
+    }
+
+    this.transformControls.detach();
+    this.activeTransformTarget = null;
   }
 
   private getClientType(): string {

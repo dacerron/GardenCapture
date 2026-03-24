@@ -76,6 +76,10 @@ export class WorldMarkers {
     return this.sprites;
   }
 
+  getSpriteAt(index: number): THREE.Sprite | null {
+    return this.sprites[index] ?? null;
+  }
+
   getPickableObjects(): readonly THREE.Object3D[] {
     const list = this.labelSprite ? [this.labelSprite, ...this.sprites] : [...this.sprites];
     return list;

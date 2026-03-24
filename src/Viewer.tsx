@@ -101,6 +101,7 @@ export default function Viewer({ gaussianPath, markers, startPos, onBack, embedd
     const parsedStartPos = parseStartPos(startPosParam);
 
     app.setWorldAxesPosition(parsedStartPos ?? [0, 0, 0]);
+    app.setWorldAxesVisible(false);
 
     if (raw && hasSetGaussianPath(app)) {
       // resolve: support /assets from public, absolute urls, and relative fallbacks

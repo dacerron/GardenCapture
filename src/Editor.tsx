@@ -5,7 +5,7 @@ import { ThreeApp } from "./three/ThreeApp";
 import type { ControlMode } from "./three/ScreenSpace";
 import type { MarkerInput } from "./three/WorldMarkers";
 import { awsClient } from "./lib/awsClient";
-import { listFields, updateFieldMarkers } from "./adminApi";
+import { listFields, updateField } from "./adminApi";
 import type { Field as AdminField, MarkerPayload } from "./adminApi";
 import "./index.css";
 
@@ -213,6 +213,7 @@ export default function Editor() {
   const [selectedPinIndex, setSelectedPinIndex] = useState<number>(0);
   const [markers, setMarkers] = useState<EditorMarker[]>([]);
   const [mode, setMode] = useState<"preview" | "place" | "edit">("preview");
+  const [editTarget, setEditTarget] = useState<"marker" | "interest" | null>(null);
   const [placementDistance, setPlacementDistance] = useState(PLACEMENT_DISTANCE_DEFAULT);
   const [selectedMarkerIndex, setSelectedMarkerIndex] = useState<number | null>(null);
   const [placementIconIndex, setPlacementIconIndex] = useState(0);
@@ -239,9 +240,10 @@ export default function Editor() {
             label: "",
           }
         : undefined;
-    const selectedIndex = mode === "edit" ? selectedMarkerIndex : undefined;
+    const selectedIndex =
+      mode === "edit" && editTarget !== "interest" ? selectedMarkerIndex : undefined;
     appRef.current.setWorldMarkers(input, preview, selectedIndex);
-  }, [markers, mode, placementRadius, placementIconIndex, selectedMarkerIndex]);
+  }, [markers, mode, placementRadius, placementIconIndex, selectedMarkerIndex, editTarget]);
 
   const placeMarkerAtCurrentPreview = useCallback(() => {
     if (!appRef.current) return;
@@ -325,7 +327,9 @@ export default function Editor() {
         const backendMarkers = Array.isArray(field.markers) ? (field.markers as MarkerPayload[]) : [];
         const nextMarkers = backendMarkersToEditorMarkers(backendMarkers);
         setMarkers(nextMarkers);
-        setSelectedMarkerIndex(nextMarkers.length ? 0 : null);
+        const nextSelectedIndex = nextMarkers.length ? 0 : null;
+        setSelectedMarkerIndex(nextSelectedIndex);
+        setEditTarget(nextSelectedIndex !== null ? "marker" : null);
         if (!gaussianPathParam) {
           const filePath = field.File?.trim();
           if (filePath) {
@@ -383,16 +387,59 @@ export default function Editor() {
     if (mode === "preview") {
       appRef.current.setPlacementDistance(0);
       appRef.current.setEditorCallbacks({});
+      appRef.current.setMarkerEditing(null);
+      appRef.current.setInterestPointEditing(false);
+      setEditTarget(null);
     } else if (mode === "place") {
       appRef.current.setPlacementDistance(placementDistance);
       appRef.current.setEditorCallbacks({});
-    } else {
+      appRef.current.setMarkerEditing(null);
+      appRef.current.setInterestPointEditing(false);
+      setEditTarget(null);
+    } else if (mode === "edit") {
       appRef.current.setPlacementDistance(0);
       appRef.current.setEditorCallbacks({
-        onMarkerClick: (index) => setSelectedMarkerIndex(index),
+        onMarkerClick: (index) => {
+          setSelectedMarkerIndex(index);
+          setEditTarget("marker");
+        },
+        onInterestPointClick: () => {
+          setEditTarget("interest");
+        },
       });
+      if (editTarget === "interest") {
+        appRef.current.setMarkerEditing(null);
+        appRef.current.setInterestPointEditing(true, (position) => {
+          setAxisStartPos(position);
+        });
+      } else {
+        appRef.current.setMarkerEditing(
+          selectedMarkerIndex,
+          (position) => {
+            const roundedPosition = position.map((value) => roundCoordinate(value)) as [
+              number,
+              number,
+              number,
+            ];
+            if (selectedMarkerIndex === null) return;
+            setMarkers((prev) => {
+              const next = [...prev];
+              const marker = next[selectedMarkerIndex];
+              if (!marker) return prev;
+              next[selectedMarkerIndex] = { ...marker, position: roundedPosition };
+              return next;
+            });
+            setPositionDrafts(roundedPosition.map((value) => formatCoordinateForInput(value)) as [
+              string,
+              string,
+              string,
+            ]);
+          }
+        );
+        appRef.current.setInterestPointEditing(false);
+      }
     }
-  }, [mode, placementDistance]);
+  }, [mode, placementDistance, selectedMarkerIndex, editTarget]);
 
   useEffect(() => {
     const next = pins.length;
@@ -414,6 +461,7 @@ export default function Editor() {
     setAxisStartPos(parseStartPos(pin.start_pos));
     setMarkers(parseApiMarkers(pin.markers ?? []));
     setSelectedMarkerIndex(null);
+    setEditTarget(null);
     appRef.current?.loadGaussianScene(resolved);
   }, [pins, selectedPinIndex, gaussianPathParam, isFieldManagement]);
 
@@ -441,15 +489,36 @@ export default function Editor() {
     setSaveStatus("saving");
     setSaveMessage("");
     try {
-      const payload = editorMarkersToBackend(markers);
-      await updateFieldMarkers(fieldId, payload);
+      const markerPayload = editorMarkersToBackend(markers);
+      const nextStartPos = axisStartPos ?? [0, 0, 0];
+      await updateField(fieldId, {
+        markers: markerPayload,
+        start_pos: {
+          x: roundCoordinate(nextStartPos[0]),
+          y: roundCoordinate(nextStartPos[1]),
+          z: roundCoordinate(nextStartPos[2]),
+        },
+      });
       setSaveStatus("success");
-      setSaveMessage("Markers saved.");
+      setSaveMessage("Saved.");
+      setManagedField((prev) =>
+        prev
+          ? {
+              ...prev,
+              markers: markerPayload,
+              start_pos: {
+                x: roundCoordinate(nextStartPos[0]),
+                y: roundCoordinate(nextStartPos[1]),
+                z: roundCoordinate(nextStartPos[2]),
+              },
+            }
+          : prev
+      );
     } catch (error: any) {
       setSaveStatus("error");
-      setSaveMessage(error?.message ? String(error.message) : "Failed to save markers.");
+      setSaveMessage(error?.message ? String(error.message) : "Failed to save.");
     }
-  }, [fieldId, markers]);
+  }, [fieldId, markers, axisStartPos]);
 
   const selectedMarker = selectedMarkerIndex !== null ? markers[selectedMarkerIndex] : null;
 
@@ -569,7 +638,11 @@ export default function Editor() {
 
         <h3 style={{ margin: 0, fontSize: "1rem", color: "#e6edf3" }}>Mode</h3>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          {(["preview", "place", "edit"] as const).map((m) => (
+          {([
+            ["preview", "Preview"],
+            ["place", "Place"],
+            ["edit", "Edit"],
+          ] as const).map(([m, label]) => (
             <button
               key={m}
               onClick={() => setMode(m)}
@@ -584,7 +657,7 @@ export default function Editor() {
                 cursor: "pointer",
               }}
             >
-              {m}
+              {label}
             </button>
           ))}
         </div>
@@ -660,6 +733,22 @@ export default function Editor() {
             />
           </div>
           </>
+        )}
+
+        {mode === "edit" && (
+          <div
+            style={{
+              padding: "0.75rem",
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.04)",
+              color: "#b8c2d1",
+              fontSize: "0.82rem",
+              lineHeight: 1.5,
+            }}
+          >
+            Click a marker to move that marker, or click the interest-point axis to move the interest point.
+          </div>
         )}
 
         <h3 style={{ margin: 0, fontSize: "1rem", color: "#e6edf3" }}>Markers ({markers.length})</h3>
@@ -865,7 +954,7 @@ export default function Editor() {
                 cursor: fieldStatus !== "ready" || saveStatus === "saving" ? "not-allowed" : "pointer",
               }}
             >
-              {saveStatus === "saving" ? "Saving..." : "Save Markers"}
+              {saveStatus === "saving" ? "Saving..." : "Save"}
             </button>
             {fieldStatus === "loading" && (
               <span style={{ fontSize: "0.8rem", color: "#b8c2d1" }}>Loading field markers...</span>
@@ -874,10 +963,10 @@ export default function Editor() {
               <span style={{ fontSize: "0.8rem", color: "#fca5a5" }}>{fieldError || "Unable to load field."}</span>
             )}
             {saveStatus === "success" && (
-              <span style={{ fontSize: "0.8rem", color: "#86efac" }}>{saveMessage || "Markers saved."}</span>
+              <span style={{ fontSize: "0.8rem", color: "#86efac" }}>{saveMessage || "Saved."}</span>
             )}
             {saveStatus === "error" && (
-              <span style={{ fontSize: "0.8rem", color: "#fca5a5" }}>{saveMessage || "Failed to save markers."}</span>
+              <span style={{ fontSize: "0.8rem", color: "#fca5a5" }}>{saveMessage || "Failed to save."}</span>
             )}
           </div>
         )}
