@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
-import { awsClient } from "./lib/awsClient";
+// import { awsClient } from "./lib/awsClient";
 import Viewer from "./Viewer";
 
 /* Fix default marker icon with bundlers (Leaflet expects images at root) */
