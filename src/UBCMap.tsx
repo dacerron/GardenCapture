@@ -185,11 +185,11 @@ export default function UBCMap({
     .map((pin, index) => ({ pin, index }))
     .filter(({ pin }) => (pin.title || "").toLowerCase().includes(searchQuery.toLowerCase()));
 
-  const fetchPins = useCallback(async () => {
-    const res = await awsClient.fetch(
-      `${import.meta.env.VITE_API_URL}/pins`,
-      { method: "GET" }
-    );
+    const fetchPins = useCallback(async () => {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/pins`,
+        { method: "GET" }
+      );
 
     if (!res.ok) throw new Error(`Pins fetch failed: ${res.status}`);
 

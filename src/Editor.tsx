@@ -5,7 +5,8 @@ import { ThreeApp } from "./three/ThreeApp";
 import type { ControlMode } from "./three/ScreenSpace";
 import type { MarkerInput } from "./three/WorldMarkers";
 // import { awsClient } from "./lib/awsClient";
-import { listFields, updateFieldMarkers } from "./adminApi";
+// import { listFields, updateFieldMarkers } from "./adminApi";
+import { updateField, updateFieldMarkers } from "./adminApi";
 import type { Field as AdminField, MarkerPayload } from "./adminApi";
 import "./index.css";
 
@@ -199,7 +200,7 @@ function parseMarkerFormParam(raw: string | null): EditorMarker | null {
 
 async function fetchFieldById(fieldId: string): Promise<AdminField | null> {
   const baseUrl = import.meta.env.VITE_API_URL as string;
-  const res = await awsClient.fetch(`${baseUrl}/fields/${encodeURIComponent(fieldId)}`, {
+  const res = await fetch(`${baseUrl}/fields/${encodeURIComponent(fieldId)}`, {
     method: "GET",
   });
 
