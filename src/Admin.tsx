@@ -1,5 +1,5 @@
 import { type CSSProperties, type FormEvent, Fragment, useEffect, useState } from "react";
-import { fetchAuthSession, signInWithRedirect, signOut } from "aws-amplify/auth";
+import { fetchAuthSession, signInWithRedirect } from "aws-amplify/auth";
 import { type CreateFieldPayload, type MarkerPayload, createField, deleteField, listFields, updateField } from "./adminApi";
 
 type FieldItem = {
