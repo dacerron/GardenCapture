@@ -11,13 +11,22 @@ interface GSViewer {
       rotation: [number, number, number, number];
       progressiveLoad?: boolean;
       splatAlphaRemovalThreshold?: number;
+      onProgress?: (
+        percentComplete: number,
+        percentCompleteLabel: string,
+        loaderStatus: number
+      ) => void;
     }
   ): Promise<void>;
   update(): void;
   render(): void;
   dispose(): void;
   getSceneCount?(): number;
+  isLoadingOrUnloading?(): boolean;
   removeSplatScenes?(indexes: number[], showLoadingUI?: boolean): Promise<void>;
+  splatMesh?: {
+    visibleRegionChanging?: boolean;
+  };
 }
 
 // Constructor type for the lib's Viewer
@@ -51,6 +60,13 @@ export interface GaussianViewerOptions {
   splatAlphaRemovalThreshold?: number;
 }
 
+export type GaussianLoadPhase = "downloading" | "processing" | "finalizing";
+
+export interface GaussianLoadProgress {
+  progress: number | null;
+  phase: GaussianLoadPhase;
+}
+
 export class GaussianViewer {
   private viewer: GSViewer;
   private currentPath?: string;
@@ -71,9 +87,6 @@ export class GaussianViewer {
     // - dynamicScene: false = optimizes for static scenes
     const useSharedMemory = typeof SharedArrayBuffer !== "undefined";
     this.alphaThreshold = options.splatAlphaRemovalThreshold ?? 1;
-
-    console.log("[GaussianViewer] Alpha removal threshold:", this.alphaThreshold);
-    console.log("[GaussianViewer] SharedArrayBuffer:", useSharedMemory);
 
     this.viewer = new ViewerClass({
       selfDrivenMode: false,
@@ -109,7 +122,7 @@ export class GaussianViewer {
     this.viewer.render();
   }
 
-  async loadScene(path: string, onProgress?: (progress: number | null) => void) {
+  async loadScene(path: string, onProgress?: (state: GaussianLoadProgress) => void) {
     if (!path) return;
     if (this.destroyed) return;
     if (this.currentPath === path) return;
@@ -126,7 +139,7 @@ export class GaussianViewer {
       }
       if (this.destroyed || token !== this.loadToken) return;
 
-      onProgress?.(null);
+      onProgress?.({ progress: 0, phase: "downloading" });
 
       await this.viewer.addSplatScene(path, {
         position: [0, 0, 0],
@@ -136,13 +149,29 @@ export class GaussianViewer {
         progressiveLoad: true, // Load progressively for faster initial render
         // Remove transparent splats - higher = more culling = faster
         splatAlphaRemovalThreshold: this.alphaThreshold,
+        onProgress: (percentComplete, _percentLabel, loaderStatus) => {
+          if (this.destroyed || token !== this.loadToken) return;
+
+          const progress = Number.isFinite(percentComplete)
+            ? Math.max(0, Math.min(1, percentComplete / 100))
+            : null;
+
+          onProgress?.({
+            progress,
+            phase: loaderStatus === 1 ? "processing" : "downloading",
+          });
+        },
       });
-      await this.waitForFrames(30); // Reduced from 60
-      onProgress?.(1);
+      if (this.destroyed || token !== this.loadToken) return;
+
+      onProgress?.({ progress: 1, phase: "finalizing" });
+      await this.waitForViewerReady(token);
+      if (this.destroyed || token !== this.loadToken) return;
+
+      onProgress?.({ progress: 1, phase: "finalizing" });
     } catch (e) {
       if (this.destroyed || token !== this.loadToken) {
-        // Ignore errors from loads that were superseded or canceled by dispose
-        console.debug("Skipped load error from disposed GaussianViewer:", e);
+        // Ignore errors from loads that were superseded or canceled by dispose.
         return;
       }
       console.error("Failed to load splat via setPath:", e);
@@ -155,16 +184,30 @@ export class GaussianViewer {
     this.viewer.dispose();
   }
 
-  private waitForFrames(count: number) {
+  private waitForViewerReady(token: number, stableFrameTarget = 12) {
     return new Promise<void>((resolve) => {
-      let remaining = count;
+      let stableFrames = 0;
+
       const step = () => {
-        if (--remaining <= 0 || this.destroyed) {
+        if (this.destroyed || token !== this.loadToken) {
           resolve();
-        } else {
-          requestAnimationFrame(step);
+          return;
         }
+
+        const stillLoading = this.viewer.isLoadingOrUnloading?.() ?? false;
+        const stillRevealing = Boolean(this.viewer.splatMesh?.visibleRegionChanging);
+        const ready = !stillLoading && !stillRevealing;
+
+        stableFrames = ready ? stableFrames + 1 : 0;
+
+        if (stableFrames >= stableFrameTarget) {
+          resolve();
+          return;
+        }
+
+        requestAnimationFrame(step);
       };
+
       requestAnimationFrame(step);
     });
   }

@@ -212,11 +212,6 @@ async function fetchFieldById(fieldId: string): Promise<AdminField | null> {
   }
 
   const field = raw ? (JSON.parse(raw) as AdminField) : null;
-  console.log("[Editor start_pos debug] fetched field", {
-    fieldId,
-    start_pos: field?.start_pos,
-    markersCount: Array.isArray(field?.markers) ? field.markers.length : 0,
-  });
   return field;
 }
 
@@ -242,7 +237,6 @@ export default function Editor() {
   const [selectedMarkerIndex, setSelectedMarkerIndex] = useState<number | null>(null);
   const [placementIconIndex, setPlacementIconIndex] = useState(0);
   const [placementRadius, setPlacementRadius] = useState(0.1);
-  const [placementLabel, setPlacementLabel] = useState("New marker");
   const [managedField, setManagedField] = useState<AdminField | null>(null);
   const [fieldStatus, setFieldStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [fieldError, setFieldError] = useState("");
@@ -276,11 +270,11 @@ export default function Editor() {
     const newMarker: EditorMarker = {
       position: [pos.x, pos.y, pos.z],
       radius: placementRadius,
-      label: placementLabel || "New marker",
+      label: "New marker",
       icon: iconUrl,
     };
     setMarkers((prev) => [...prev, newMarker]);
-  }, [placementIconIndex, placementRadius, placementLabel]);
+  }, [placementIconIndex, placementRadius]);
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -441,10 +435,6 @@ export default function Editor() {
       if (editTarget === "interest") {
         appRef.current.setMarkerEditing(null);
         appRef.current.setInterestPointEditing(true, (position) => {
-          console.log("[Editor start_pos debug] interest point moved", {
-            fieldId,
-            position,
-          });
           setAxisStartPos(position);
         });
       } else {
@@ -522,15 +512,7 @@ export default function Editor() {
   }, [searchParams]);
 
   const handleSaveMarkers = useCallback(async () => {
-    console.log("[Editor start_pos debug] save handler invoked", {
-      fieldId,
-      fieldStatus,
-      saveStatus,
-      axisStartPos,
-      markersCount: markers.length,
-    });
     if (!fieldId) {
-      console.warn("[Editor start_pos debug] save aborted: missing fieldId");
       return;
     }
     setSaveStatus("saving");
@@ -543,16 +525,10 @@ export default function Editor() {
         y: roundCoordinate(nextStartPos[1]),
         z: roundCoordinate(nextStartPos[2]),
       };
-      console.log("[Editor start_pos debug] saving field", {
-        fieldId,
-        start_pos: startPosPayload,
-        markersCount: markerPayload.length,
-      });
       await updateField(fieldId, {
         markers: markerPayload,
         start_pos: startPosPayload,
       });
-      console.log("[Editor start_pos debug] save request completed", { fieldId });
       const refreshedField = await fetchFieldById(fieldId);
       const persistedStartPos = parseStartPos(refreshedField?.start_pos);
       const persistedMarkers = Array.isArray(refreshedField?.markers)
@@ -563,25 +539,6 @@ export default function Editor() {
             position: entry[2],
             label: entry[3],
           }));
-      console.log("[Editor start_pos debug] refetched after save", {
-        fieldId,
-        expectedStartPos: startPosPayload,
-        returnedStartPos: refreshedField?.start_pos,
-        parsedReturnedStartPos: persistedStartPos,
-      });
-      if (
-        !persistedStartPos ||
-        persistedStartPos[0] !== startPosPayload.x ||
-        persistedStartPos[1] !== startPosPayload.y ||
-        persistedStartPos[2] !== startPosPayload.z
-      ) {
-        console.warn("[Editor start_pos debug] persisted start_pos does not match saved value", {
-          fieldId,
-          expectedStartPos: startPosPayload,
-          returnedStartPos: refreshedField?.start_pos,
-          parsedReturnedStartPos: persistedStartPos,
-        });
-      }
 
       if (refreshedField) {
         setManagedField(refreshedField);
@@ -591,11 +548,10 @@ export default function Editor() {
       setSaveStatus("success");
       setSaveMessage("Saved.");
     } catch (error: any) {
-      console.error("[Editor start_pos debug] save failed", error);
       setSaveStatus("error");
       setSaveMessage(error?.message ? String(error.message) : "Failed to save.");
     }
-  }, [fieldId, fieldStatus, saveStatus, markers, axisStartPos]);
+  }, [fieldId, markers, axisStartPos]);
 
   const selectedMarker = selectedMarkerIndex !== null ? markers[selectedMarkerIndex] : null;
 
@@ -757,24 +713,6 @@ export default function Editor() {
           </div>
           <div>
             <h3 style={{ margin: 0, fontSize: "0.9rem", color: "#e6edf3" }}>Preview style</h3>
-            <label style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>Label</label>
-            <input
-              type="text"
-              value={placementLabel}
-              onChange={(e) => setPlacementLabel(e.target.value)}
-              placeholder="New marker"
-              style={{
-                width: "100%",
-                padding: "0.4rem 0.6rem",
-                marginTop: "0.25rem",
-                marginBottom: "0.5rem",
-                borderRadius: 6,
-                border: "1px solid rgba(255,255,255,0.2)",
-                background: "rgba(0,0,0,0.3)",
-                color: "#e6edf3",
-                fontSize: "0.875rem",
-              }}
-            />
             <label style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>Icon</label>
             <select
               value={placementIconIndex}

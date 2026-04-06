@@ -5,7 +5,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import type { ControlMode, PerformanceSettings } from "./ScreenSpace";
 import { ScreenSpaceUI, PERFORMANCE_PRESETS } from "./ScreenSpace";
-import { GaussianViewer } from "./GaussianViewer";
+import { GaussianViewer, type GaussianLoadProgress } from "./GaussianViewer";
 import { WorldMarkers } from "./WorldMarkers";
 import { Skybox } from "./Skybox";
 import { LoadingOverlay } from "./LoadingOverlay";
@@ -327,16 +327,7 @@ export class ThreeApp {
     this.overlay.setHint("Downloading scene data...");
     this.overlay.setProgress(0);
     try {
-      await this.gaussian.loadScene(path, (progress) => {
-        this.overlay.setProgress(progress);
-        if (progress === null) {
-          this.overlay.setHint("Downloading scene data...");
-        } else if (progress < 1) {
-          this.overlay.setHint(`Downloading scene data... ${Math.round(progress * 100)}%`);
-        } else {
-          this.overlay.setHint("Building virtual soil...");
-        }
-      });
+      await this.gaussian.loadScene(path, (state) => this.updateOverlayForGaussianLoad(state));
       if (!this.destroyed) {
         this.camera.position.copy(this.currentStartPos).add(new THREE.Vector3(0, 2.5, 5));
         if (this.orbitControls) {
@@ -509,6 +500,30 @@ export class ThreeApp {
     return dt;
   }
 
+  private updateOverlayForGaussianLoad(
+    state: GaussianLoadProgress,
+    reloading = false
+  ) {
+    this.overlay.setProgress(state.progress);
+
+    if (state.phase === "downloading") {
+      const prefix = reloading ? "Reloading virtual soil..." : "Downloading scene data...";
+      this.overlay.setHint(
+        state.progress === null
+          ? prefix
+          : `${prefix} ${Math.round(state.progress * 100)}%`
+      );
+      return;
+    }
+
+    if (state.phase === "processing") {
+      this.overlay.setHint(reloading ? "Processing virtual soil..." : "Processing scene data...");
+      return;
+    }
+
+    this.overlay.setHint("Finalizing virtual soil...");
+  }
+
   private applyPerformanceSettings(settings: PerformanceSettings) {
     const prevSettings = this.perfSettings;
     this.perfSettings = settings;
@@ -545,16 +560,9 @@ export class ThreeApp {
       this.overlay.setHint("Reloading virtual soil...");
       this.overlay.setProgress(0);
       try {
-        await this.gaussian.loadScene(currentPath, (progress) => {
-          this.overlay.setProgress(progress);
-          if (progress === null) {
-            this.overlay.setHint("Reloading virtual soil...");
-          } else if (progress < 1) {
-            this.overlay.setHint(`Reloading virtual soil... ${Math.round(progress * 100)}%`);
-          } else {
-            this.overlay.setHint("Finalizing scene...");
-          }
-        });
+        await this.gaussian.loadScene(currentPath, (state) =>
+          this.updateOverlayForGaussianLoad(state, true)
+        );
       } finally {
         if (!this.destroyed) this.overlay.hide();
       }
