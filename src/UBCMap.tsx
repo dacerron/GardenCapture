@@ -26,6 +26,18 @@ type Pin = {
   markers?: Array<Record<string, unknown>>;
 };
 
+type SceneInfo = {
+  title?: string;
+  location?: string;
+  description?: string;
+};
+
+const getPinSceneInfo = (pin: Pin): SceneInfo => ({
+  title: pin.title || "Untitled field",
+  location: `${pin.position.lat.toFixed(5)}, ${pin.position.lng.toFixed(5)}`,
+  description: pin.description ?? "",
+});
+
 const placeholderImage =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='240' viewBox='0 0 320 240'%3E%3Crect width='320' height='240' fill='%23202634'/%3E%3Ctext x='160' y='120' fill='%23a9b4c6' font-family='Arial' font-size='18' text-anchor='middle' dominant-baseline='middle'%3ENo image%3C/text%3E%3C/svg%3E";
 
@@ -163,12 +175,18 @@ export default function UBCMap({
   openViewer: (
     path?: string,
     markers?: Array<Record<string, unknown>>,
-    startPos?: unknown
+    startPos?: unknown,
+    sceneInfo?: SceneInfo
   ) => void;
   mapLoaded: boolean;
   setMapLoaded: (loaded: boolean) => void;
   sidebarCollapsed: boolean;
-  activeViewer: { path: string; markers?: Array<Record<string, unknown>>; startPos?: unknown } | null;
+  activeViewer: {
+    path: string;
+    markers?: Array<Record<string, unknown>>;
+    startPos?: unknown;
+    sceneInfo?: SceneInfo;
+  } | null;
   onCloseViewer: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -343,7 +361,7 @@ export default function UBCMap({
             start_pos: pin.start_pos,
             markersCount: Array.isArray(pin.markers) ? pin.markers.length : 0,
           });
-          openViewer(pin.path, pin.markers, pin.start_pos);
+          openViewer(pin.path, pin.markers, pin.start_pos, getPinSceneInfo(pin));
         },
         () => marker.closePopup()
       );
@@ -548,6 +566,7 @@ export default function UBCMap({
               gaussianPath={activeViewer.path}
               markers={activeViewer.markers}
               startPos={activeViewer.startPos}
+              sceneInfo={activeViewer.sceneInfo}
               onBack={onCloseViewer}
               embedded
             />

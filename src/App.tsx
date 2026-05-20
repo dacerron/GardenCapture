@@ -6,6 +6,11 @@ type ViewerState = {
   path: string;
   markers?: Array<Record<string, unknown>>;
   startPos?: unknown;
+  sceneInfo?: {
+    title?: string;
+    location?: string;
+    description?: string;
+  };
 } | null;
 
 export default function App() {
@@ -24,10 +29,15 @@ export default function App() {
   const openViewer = (
     path?: string,
     markers?: Array<Record<string, unknown>>,
-    startPos?: unknown
+    startPos?: unknown,
+    sceneInfo?: {
+      title?: string;
+      location?: string;
+      description?: string;
+    }
   ) => {
     if (!path) return;
-    setViewerState({ path, markers, startPos });
+    setViewerState({ path, markers, startPos, sceneInfo });
   };
 
   const closeViewer = () => {

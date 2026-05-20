@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { FlyControls } from "./FlyControls";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import type { ControlMode, PerformanceSettings } from "./ScreenSpace";
+import type { ControlMode, MobileOrbitTool, PerformanceSettings, SceneInfo } from "./ScreenSpace";
 import { ScreenSpaceUI, PERFORMANCE_PRESETS } from "./ScreenSpace";
 import { GaussianViewer, type GaussianLoadProgress } from "./GaussianViewer";
 import { WorldMarkers } from "./WorldMarkers";
@@ -19,9 +19,12 @@ const DEFAULT_PLAY_AREA_BOUNDS = new THREE.Box3(
   new THREE.Vector3(-25, -5, -25),
   new THREE.Vector3(25, 15, 25)
 );
+const DEFAULT_ORBIT_CAMERA_OFFSET = new THREE.Vector3(0, 2.5, 5);
 
 type ThreeAppOptions = {
   defaultControlMode?: ControlMode;
+  onBack?: () => void;
+  sceneInfo?: SceneInfo;
 };
 
 export class ThreeApp {
@@ -49,7 +52,10 @@ export class ThreeApp {
   private orbitControls: OrbitControls | null = null;
   private controlMode: ControlMode = "fly";
   private readonly defaultControlMode: ControlMode;
+  private readonly onBack?: () => void;
+  private readonly sceneInfo?: SceneInfo;
   private flySpeed = 0.5;
+  private mobileOrbitTool: MobileOrbitTool = "rotate";
   private screenUI!: ScreenSpaceUI;
   private gaussian!: GaussianViewer;
   private skybox!: Skybox;
@@ -89,6 +95,11 @@ export class ThreeApp {
   constructor(container: HTMLElement, options?: ThreeAppOptions) {
     this.container = container;
     this.defaultControlMode = options?.defaultControlMode ?? "orbit";
+    this.onBack = options?.onBack;
+    this.sceneInfo = options?.sceneInfo;
+    if (ThreeApp.isMobileLike()) {
+      this.perfSettings = PERFORMANCE_PRESETS.low;
+    }
 
     //systems
     this.initRenderer();
@@ -119,6 +130,8 @@ export class ThreeApp {
       height: "100%",
       display: "block",
       cursor: "grab",
+      touchAction: "none",
+      overscrollBehavior: "none",
     });
     this.renderer.autoClear = false;
 
@@ -142,10 +155,12 @@ export class ThreeApp {
   private initUI() {
     this.screenUI = new ScreenSpaceUI(this.container);
     this.overlay = new LoadingOverlay(this.container);
+    this.screenUI.setMobileBackHandler(this.onBack);
     this.screenUI.setRuntimeInfo({
       clientType: this.getClientType(),
       gpuRenderer: this.getGpuRendererName(),
     });
+    this.screenUI.setMobileSceneInfo(this.sceneInfo ?? {});
   }
 
   private initCamera() {
@@ -163,6 +178,9 @@ export class ThreeApp {
     this.flyControls.setFlySpeed(this.flySpeed);
     this.screenUI.setSpeed(this.flySpeed);
     this.screenUI.setControlModeChangeHandler((mode) => this.setControlMode(mode));
+    this.screenUI.setMobileOrbitToolChangeHandler((tool) => this.setMobileOrbitTool(tool));
+    this.screenUI.setMobileResetHandler(() => this.resetOrbitCamera());
+    this.screenUI.setPerformancePreset(this.perfSettings.preset);
     this.setControlMode(this.defaultControlMode);
     
     // Performance preset handler
@@ -188,7 +206,7 @@ export class ThreeApp {
       dom: this.renderer.domElement,
       camera: this.camera,
       markers: this.markers,
-      moveThresholdPx: 6,
+      moveThresholdPx: ThreeApp.isMobileLike() ? 14 : 6,
     });
     this.initSkybox();
     this.worldAxes = new THREE.AxesHelper(0.75);
@@ -329,7 +347,7 @@ export class ThreeApp {
     try {
       await this.gaussian.loadScene(path, (state) => this.updateOverlayForGaussianLoad(state));
       if (!this.destroyed) {
-        this.camera.position.copy(this.currentStartPos).add(new THREE.Vector3(0, 2.5, 5));
+        this.camera.position.copy(this.currentStartPos).add(DEFAULT_ORBIT_CAMERA_OFFSET);
         if (this.orbitControls) {
           this.orbitControls.target.copy(this.currentStartPos);
           this.orbitControls.update();
@@ -440,7 +458,7 @@ export class ThreeApp {
   private resizeToContainer(force = false) {
     const w = Math.max(1, this.container.clientWidth);
     const h = Math.max(1, this.container.clientHeight);
-    const canvasDpr = window.devicePixelRatio || 1;
+    const canvasDpr = this.getEffectiveCanvasDpr();
 
     if (!force && this.prevDpr === canvasDpr && this.prevW === w && this.prevH === h) {
       const sceneDpr = Math.min(canvasDpr, this.perfSettings.pixelRatio);
@@ -487,6 +505,12 @@ export class ThreeApp {
   private observeResize() {
     this.resizeObs = new ResizeObserver(() => this.resizeToContainer(true));
     this.resizeObs?.observe(this.container);
+  }
+
+  private getEffectiveCanvasDpr(): number {
+    const rawDpr = window.devicePixelRatio || 1;
+    const maxDpr = ThreeApp.isMobileLike() ? 1.25 : 2;
+    return Math.min(rawDpr, maxDpr);
   }
 
   private updateFPS(): number {
@@ -615,6 +639,10 @@ export class ThreeApp {
   }
 
   private setControlMode(mode: ControlMode) {
+    if (mode === "fly" && ThreeApp.isMobileLike()) {
+      mode = "orbit";
+    }
+
     if (mode === this.controlMode) {
       this.syncControlModeUi(mode);
       return;
@@ -635,6 +663,7 @@ export class ThreeApp {
 
       this.orbitControls.target.copy(this.currentStartPos);
       this.orbitControls.update();
+      this.applyMobileOrbitTool();
       this.applyInteractionState(false);
       this.renderer.domElement.style.cursor = "grab";
       return;
@@ -654,6 +683,43 @@ export class ThreeApp {
     this.screenUI.setControlMode(mode);
     this.screenUI.setSpeed(this.flySpeed);
     this.screenUI.setSpeedControlEnabled(mode === "fly");
+    this.screenUI.setMobileOrbitTool(this.mobileOrbitTool);
+  }
+
+  private setMobileOrbitTool(tool: MobileOrbitTool) {
+    this.mobileOrbitTool = tool;
+    if (ThreeApp.isMobileLike()) {
+      this.setControlMode("orbit");
+    }
+    this.screenUI.setMobileOrbitTool(tool);
+    this.applyMobileOrbitTool();
+  }
+
+  private applyMobileOrbitTool() {
+    if (!this.orbitControls || !ThreeApp.isMobileLike()) return;
+
+    this.orbitControls.enableRotate = this.mobileOrbitTool === "rotate";
+    this.orbitControls.enablePan = this.mobileOrbitTool === "pan";
+    this.orbitControls.enableZoom = this.mobileOrbitTool === "zoom";
+
+    this.orbitControls.touches.ONE =
+      this.mobileOrbitTool === "rotate"
+        ? THREE.TOUCH.ROTATE
+        : this.mobileOrbitTool === "pan"
+        ? THREE.TOUCH.PAN
+        : null;
+    this.orbitControls.touches.TWO =
+      this.mobileOrbitTool === "zoom" ? THREE.TOUCH.DOLLY_PAN : null;
+  }
+
+  private resetOrbitCamera() {
+    this.setControlMode("orbit");
+    this.camera.position.copy(this.currentStartPos).add(DEFAULT_ORBIT_CAMERA_OFFSET);
+    if (this.orbitControls) {
+      this.orbitControls.target.copy(this.currentStartPos);
+      this.orbitControls.update();
+      this.applyMobileOrbitTool();
+    }
   }
 
   private applyInteractionState(isTransformDragging: boolean) {
@@ -706,10 +772,14 @@ export class ThreeApp {
   }
 
   private getClientType(): string {
+    return ThreeApp.isMobileLike() ? "Mobile" : "Desktop";
+  }
+
+  private static isMobileLike(): boolean {
     const ua = navigator.userAgent || "";
     const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
     const mobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
-    return mobileUa || coarsePointer ? "Mobile" : "Desktop";
+    return mobileUa || coarsePointer;
   }
 
   private getGpuRendererName(): string {

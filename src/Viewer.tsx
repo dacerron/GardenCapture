@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import * as THREE from "three";
 import { ThreeApp } from "./three/ThreeApp";
+import type { SceneInfo } from "./three/ScreenSpace";
 import "./index.css";
 
 // narrows to objects that have setGaussianPath
@@ -26,6 +27,7 @@ export type ViewerProps = {
   gaussianPath?: string;
   markers?: Array<Record<string, unknown>>;
   startPos?: unknown;
+  sceneInfo?: SceneInfo;
   onBack?: () => void;
   embedded?: boolean;
 };
@@ -75,17 +77,22 @@ const parseStartPos = (raw: unknown): [number, number, number] | null => {
   return null;
 };
 
-export default function Viewer({ gaussianPath, markers, startPos, onBack, embedded }: ViewerProps = {}) {
+export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onBack, embedded }: ViewerProps = {}) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!wrapRef.current) return;
-    const app = new ThreeApp(wrapRef.current);
+    const params = new URLSearchParams(location.search);
+    const resolvedSceneInfo = sceneInfo ?? {
+      title: params.get("title") ?? undefined,
+      location: params.get("sceneLocation") ?? params.get("location") ?? undefined,
+      description: params.get("description") ?? undefined,
+    };
+    const app = new ThreeApp(wrapRef.current, { onBack, sceneInfo: resolvedSceneInfo });
 
     // Use props if provided, otherwise fall back to query params
-    const params = new URLSearchParams(location.search);
     const raw = gaussianPath || params.get("gaussianPath");
     const markerParam = markers ? JSON.stringify(markers) : params.get("markers");
     const startPosParam = startPos ?? (() => {
@@ -167,7 +174,7 @@ export default function Viewer({ gaussianPath, markers, startPos, onBack, embedd
     }
 
     return () => app.dispose();
-  }, [location.search, gaussianPath, markers, startPos]);
+  }, [location.search, gaussianPath, markers, startPos, sceneInfo, onBack]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -220,6 +227,7 @@ export default function Viewer({ gaussianPath, markers, startPos, onBack, embedd
   return (
     <div className={`threeWrap ${embedded ? "threeWrapEmbedded" : ""}`} ref={wrapRef}>
       <div
+        className="viewerDesktopControls"
         style={{
           position: "absolute",
           top: "1rem",

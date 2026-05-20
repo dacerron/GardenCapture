@@ -381,6 +381,12 @@ canvas {
   height: 100%;
 }
 
+@media (pointer: coarse) {
+  .viewerDesktopControls {
+    display: none !important;
+  }
+}
+
 /* Strip default Google InfoWindow frame so our card matches mockup */
 .gm-style .gm-style-iw-c {
   padding: 0 !important;
