@@ -29,6 +29,56 @@ input {
   font: inherit;
 }
 
+.viewerStatusShell,
+.viewerInstructionShell {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  background: #5c7ea5;
+}
+
+.viewerStatusCard,
+.viewerInstructionCard {
+  width: min(520px, 100%);
+  padding: 1.5rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #1f1f1f;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.24);
+}
+
+.viewerStatusCard h1,
+.viewerInstructionCard h1 {
+  margin: 0 0 0.65rem;
+  font-size: 1.45rem;
+}
+
+.viewerStatusCard p,
+.viewerInstructionCard p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.viewerInstructionCard code {
+  display: block;
+  margin: 1rem 0;
+  padding: 0.75rem;
+  border-radius: 6px;
+  background: #202634;
+  color: #f7f7f7;
+  overflow-x: auto;
+}
+
+.viewerInstructionExample {
+  font-size: 0.95rem;
+}
+
+.viewerInstructionExample a {
+  text-decoration: underline;
+}
+
 .appShell {
   height: 100%;
   display: flex;

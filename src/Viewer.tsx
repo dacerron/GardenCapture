@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import * as THREE from "three";
+import { fetchFieldById, type Field, type ViewerMarkerPayload } from "./fieldApi";
 import { ThreeApp } from "./three/ThreeApp";
 import type { SceneInfo } from "./three/ScreenSpace";
 import "./index.css";
@@ -12,20 +13,13 @@ function hasSetGaussianPath(
   return !!o && typeof o === "object" && "loadGaussianScene" in o;
 }
 
-type MarkerPayload = {
-  icon?: string;
-  scale?: number;
-  position?: { x?: number; y?: number; z?: number };
-  text?: string;
-};
-
 type StartPosPayload =
   | { x?: number; y?: number; z?: number }
   | [number, number, number];
 
 export type ViewerProps = {
   gaussianPath?: string;
-  markers?: Array<Record<string, unknown>>;
+  markers?: ViewerMarkerPayload[];
   startPos?: unknown;
   sceneInfo?: SceneInfo;
   onBack?: () => void;
@@ -38,7 +32,7 @@ const resolveAssetUrl = (raw: string) => {
   return new URL(`/${raw}`, window.location.origin).href;
 };
 
-const parseMarkers = (raw: string | null): MarkerPayload[] => {
+const parseMarkerQueryParam = (raw: string | null): ViewerMarkerPayload[] => {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -77,59 +71,146 @@ const parseStartPos = (raw: unknown): [number, number, number] | null => {
   return null;
 };
 
+const formatFieldLocation = (field: Field) => {
+  if (field.LocationName?.trim()) return field.LocationName.trim();
+  if (typeof field.Latitude === "number" && typeof field.Longitude === "number") {
+    return `${field.Latitude.toFixed(5)}, ${field.Longitude.toFixed(5)}`;
+  }
+  return field.FieldID;
+};
+
+const getFieldSceneInfo = (field: Field): SceneInfo => ({
+  title: field.Name || field.FieldID,
+  location: formatFieldLocation(field),
+  description: field.Description,
+});
+
+const getFieldMarkers = (field: Field) => field.markers ?? field.Markers ?? [];
+
+type ViewerLoadState =
+  | { status: "ready"; gaussianPath?: string; markers: ViewerMarkerPayload[]; startPos?: unknown; sceneInfo: SceneInfo }
+  | { status: "loading" }
+  | { status: "error"; title: string; message: string };
+
 export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onBack, embedded }: ViewerProps = {}) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [loadState, setLoadState] = useState<ViewerLoadState>({ status: "loading" });
 
   useEffect(() => {
-    if (!wrapRef.current) return;
-    const params = new URLSearchParams(location.search);
-    const resolvedSceneInfo = sceneInfo ?? {
-      title: params.get("title") ?? undefined,
-      location: params.get("sceneLocation") ?? params.get("location") ?? undefined,
-      description: params.get("description") ?? undefined,
-    };
-    const app = new ThreeApp(wrapRef.current, { onBack, sceneInfo: resolvedSceneInfo });
+    if (gaussianPath) {
+      setLoadState({
+        status: "ready",
+        gaussianPath,
+        markers: markers ?? parseMarkerQueryParam(searchParams.get("markers")),
+        startPos:
+          startPos ??
+          (() => {
+            const value = searchParams.get("startPos");
+            if (!value) return undefined;
+            try {
+              return JSON.parse(value);
+            } catch (err) {
+              console.warn("Failed to parse start position payload", err);
+              return undefined;
+            }
+          })(),
+        sceneInfo: sceneInfo ?? {
+          title: searchParams.get("title") ?? undefined,
+          location: searchParams.get("sceneLocation") ?? searchParams.get("location") ?? undefined,
+          description: searchParams.get("description") ?? undefined,
+        },
+      });
+      return;
+    }
 
-    // Use props if provided, otherwise fall back to query params
-    const raw = gaussianPath || params.get("gaussianPath");
-    const markerParam = markers ? JSON.stringify(markers) : params.get("markers");
-    const startPosParam = startPos ?? (() => {
-      const value = params.get("startPos");
-      if (!value) return null;
+    const fieldId = searchParams.get("m")?.trim();
+    if (!fieldId) {
+      setLoadState({
+        status: "error",
+        title: "Missing field id",
+        message: "Expected URL format: /viewer/?m={FieldID}",
+      });
+      return;
+    }
+
+    let cancelled = false;
+    setLoadState({ status: "loading" });
+
+    (async () => {
       try {
-        return JSON.parse(value);
+        const field = await fetchFieldById(fieldId);
+        if (cancelled) return;
+
+        if (!field) {
+          setLoadState({
+            status: "error",
+            title: "Field not found",
+            message: `No field exists for FieldID "${fieldId}".`,
+          });
+          return;
+        }
+
+        if (!field.File?.trim()) {
+          console.error("[Viewer] field is missing File/splat path", field);
+          setLoadState({
+            status: "error",
+            title: "Missing splat file",
+            message: `Field "${field.FieldID}" does not have a Gaussian splat file configured.`,
+          });
+          return;
+        }
+
+        setLoadState({
+          status: "ready",
+          gaussianPath: field.File,
+          markers: getFieldMarkers(field),
+          startPos: field.start_pos,
+          sceneInfo: getFieldSceneInfo(field),
+        });
       } catch (err) {
-        console.warn("Failed to parse start position payload", err);
-        return null;
+        if (cancelled) return;
+        console.error("[Viewer] failed to load field", err);
+        setLoadState({
+          status: "error",
+          title: "Failed to load field",
+          message: "The field record could not be loaded. Check the FieldID and try again.",
+        });
       }
     })();
-    const parsedStartPos = parseStartPos(startPosParam);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gaussianPath, markers, sceneInfo, searchParams, startPos]);
+
+  useEffect(() => {
+    if (!wrapRef.current || loadState.status !== "ready") return;
+    const app = new ThreeApp(wrapRef.current, { onBack, sceneInfo: loadState.sceneInfo });
+    const parsedStartPos = parseStartPos(loadState.startPos);
     console.log("[Viewer start_pos debug] resolved viewer start position", {
-      gaussianPath: raw,
-      startPosProp: startPos,
-      startPosParam,
+      gaussianPath: loadState.gaussianPath,
+      startPosParam: loadState.startPos,
       parsedStartPos,
-      markersCount: Array.isArray(markers) ? markers.length : markerParam ? parseMarkers(markerParam).length : 0,
+      markersCount: loadState.markers.length,
     });
 
     app.setWorldAxesPosition(parsedStartPos ?? [0, 0, 0]);
     app.setWorldAxesVisible(false);
 
-    if (raw && hasSetGaussianPath(app)) {
+    if (loadState.gaussianPath && hasSetGaussianPath(app)) {
       // resolve: support /assets from public, absolute urls, and relative fallbacks
-      const resolved = raw.startsWith("/")
-        ? new URL(raw, window.location.origin).href
-        : /^(https?:|blob:|data:)/i.test(raw)
-        ? raw
-        : new URL(raw, window.location.href).href;
+      const resolved = loadState.gaussianPath.startsWith("/")
+        ? new URL(loadState.gaussianPath, window.location.origin).href
+        : /^(https?:|blob:|data:)/i.test(loadState.gaussianPath)
+        ? loadState.gaussianPath
+        : new URL(loadState.gaussianPath, window.location.href).href;
 
       app.loadGaussianScene(resolved);
     }
 
-    if (markerParam !== null) {
-      const markerPayloads = parseMarkers(markerParam);
+    if (loadState.markers.length > 0) {
       const loader = new THREE.TextureLoader();
       const textureCache = new Map<string, THREE.Texture>();
 
@@ -143,7 +224,7 @@ export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onB
         return texture;
       };
 
-      const worldMarkers = markerPayloads
+      const worldMarkers = loadState.markers
         .map((marker) => {
           const pos = marker.position;
           const x = pos?.x;
@@ -174,7 +255,7 @@ export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onB
     }
 
     return () => app.dispose();
-  }, [location.search, gaussianPath, markers, startPos, sceneInfo, onBack]);
+  }, [loadState, onBack]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -223,6 +304,28 @@ export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onB
     padding: 0,
     justifyContent: "center",
   };
+
+  if (loadState.status === "loading") {
+    return (
+      <div className="viewerStatusShell">
+        <div className="viewerStatusCard">
+          <h1>Loading field...</h1>
+          <p>Fetching the field record and preparing the viewer.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadState.status === "error") {
+    return (
+      <div className="viewerStatusShell">
+        <div className="viewerStatusCard" role="alert">
+          <h1>{loadState.title}</h1>
+          <p>{loadState.message}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`threeWrap ${embedded ? "threeWrapEmbedded" : ""}`} ref={wrapRef}>
