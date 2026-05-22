@@ -1,4 +1,5 @@
 import { fetchAuthSession } from "aws-amplify/auth";
+import type { MarkerLabel } from "./markerLabel";
 
 const BASE = import.meta.env.VITE_API_URL as string;
 
@@ -15,7 +16,7 @@ export type Field = {
   markers?: unknown;
 };
 
-export type MarkerPayload = [string, number, [number, number, number], string];
+export type MarkerPayload = [string, number, [number, number, number], MarkerLabel];
 
 export type CreateFieldPayload = Field;
 

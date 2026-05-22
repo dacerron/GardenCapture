@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { normalizeMarkerLabel, type MarkerLabel } from "../markerLabel";
 
 type MarkerPosition = THREE.Vector3 | [number, number, number];
 
@@ -7,7 +8,7 @@ export type MarkerInput = {
   color?: THREE.ColorRepresentation;
   radius?: number;
   texture?: THREE.Texture;
-  label?: string;
+  label?: MarkerLabel;
 };
 
 /**
@@ -51,7 +52,7 @@ export class WorldMarkers {
         this.placementPreviewSprite = sprite;
         this.placementPreviewSprite.userData = { isPlacementPreview: true };
       } else {
-        sprite.userData = { label: m.label ?? "", radius };
+        sprite.userData = { label: normalizeMarkerLabel(m.label), radius };
         this.sprites.push(sprite);
       }
       this.scene.add(sprite);
@@ -123,16 +124,21 @@ export class WorldMarkers {
   // --------------------
 
   private showLabel(sprite: THREE.Sprite, camera?: THREE.Camera) {
-    const text: string = sprite.userData?.label ?? "";
-    if (!text) {
+    const marker = {
+      label: normalizeMarkerLabel(sprite.userData?.label),
+      radius: sprite.userData?.radius,
+    };
+    const title = marker.label?.[0] ?? "";
+    const description = marker.label?.[1] ?? "";
+    if (!title && !description) {
       this.clearLabel();
       return;
     }
 
     this.clearLabel();
 
-    const radius: number = sprite.userData?.radius ?? 0.25;
-    const texture = WorldMarkers.createLabelTexture(text);
+    const radius: number = marker.radius ?? 0.25;
+    const texture = WorldMarkers.createLabelTexture(title, description);
 
     const mat = new THREE.SpriteMaterial({
       map: texture,
@@ -254,30 +260,36 @@ export class WorldMarkers {
     return texture;
   }
 
-  private static createLabelTexture(text: string): THREE.Texture {
-    const padding = 8;
-    const fontSize = 16;
-    const font = `${fontSize}px sans-serif`;
-    const lineHeight = fontSize * 1.3;
-    const closeSize = fontSize * 0.9;
-    const closePadding = 6;
-    const maxTextWidth = 220;
-    const minTotalWidth = 100;
+  private static createLabelTexture(title: string, description: string): THREE.Texture {
+    const padding = 12;
+    const titleFontSize = 16;
+    const descriptionFontSize = 14;
+    const titleFont = `600 ${titleFontSize}px sans-serif`;
+    const descriptionFont = `${descriptionFontSize}px sans-serif`;
+    const titleLineHeight = titleFontSize * 1.3;
+    const descriptionLineHeight = descriptionFontSize * 1.45;
+    const closeSize = titleFontSize * 0.9;
+    const maxTextWidth = 240;
+    const minTotalWidth = 180;
     const scale = 2;
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Unable to create canvas context for label texture.");
 
-    ctx.font = font;
-    const { lines, maxLineWidth } = WorldMarkers.wrapText(ctx, text, maxTextWidth);
+    ctx.font = titleFont;
+    const titleBlock = WorldMarkers.wrapText(ctx, title, maxTextWidth - closeSize);
+    ctx.font = descriptionFont;
+    const descriptionBlock = WorldMarkers.wrapText(ctx, description, maxTextWidth);
 
-    const textBlockWidth = Math.max(maxLineWidth, 1);
-    const textBlockHeight = lines.length * lineHeight;
-    const closeBoxWidth = closeSize + closePadding * 2;
-
-    const logicalWidth = Math.max(minTotalWidth, padding * 2 + textBlockWidth + closeBoxWidth);
-    const logicalHeight = padding * 2 + textBlockHeight;
+    const contentWidth = Math.max(titleBlock.maxLineWidth + closeSize + padding, descriptionBlock.maxLineWidth, 1);
+    const logicalWidth = Math.max(minTotalWidth, padding * 2 + contentWidth);
+    const headerHeight = padding * 2 + Math.max(titleBlock.lines.length, 1) * titleLineHeight;
+    const bodyHeight =
+      descriptionBlock.lines.length > 0
+        ? padding * 2 + descriptionBlock.lines.length * descriptionLineHeight
+        : padding * 2 + descriptionLineHeight;
+    const logicalHeight = headerHeight + bodyHeight;
 
     canvas.width = Math.ceil(logicalWidth * scale);
     canvas.height = Math.ceil(logicalHeight * scale);
@@ -286,28 +298,43 @@ export class WorldMarkers {
     if (!ctx2) throw new Error("Unable to create canvas context for label texture.");
 
     ctx2.scale(scale, scale);
-    ctx2.font = font;
     ctx2.textBaseline = "top";
 
-    // background
-    ctx2.fillStyle = "rgba(20,24,32,0.8)";
-    ctx2.strokeStyle = "rgba(255,255,255,0.15)";
+    // Modal-like container.
+    ctx2.fillStyle = "rgba(255,255,255,0.98)";
+    ctx2.strokeStyle = "rgba(0,0,0,0.22)";
     ctx2.lineWidth = 2;
     ctx2.beginPath();
     ctx2.rect(1, 1, logicalWidth - 2, logicalHeight - 2);
     ctx2.fill();
     ctx2.stroke();
 
-    // text
-    ctx2.fillStyle = "#ffffff";
-    lines.forEach((line, i) => {
-      ctx2.fillText(line, padding, padding + i * lineHeight);
+    ctx2.strokeStyle = "rgba(0,0,0,0.14)";
+    ctx2.lineWidth = 1;
+    ctx2.beginPath();
+    ctx2.moveTo(1, headerHeight);
+    ctx2.lineTo(logicalWidth - 1, headerHeight);
+    ctx2.stroke();
+
+    // Header title.
+    ctx2.font = titleFont;
+    ctx2.fillStyle = "#212529";
+    titleBlock.lines.forEach((line, i) => {
+      ctx2.fillText(line, padding, padding + i * titleLineHeight);
+    });
+
+    // Body description.
+    ctx2.font = descriptionFont;
+    ctx2.fillStyle = "#343a40";
+    const bodyLines = descriptionBlock.lines.length > 0 ? descriptionBlock.lines : [""];
+    bodyLines.forEach((line, i) => {
+      ctx2.fillText(line, padding, headerHeight + padding + i * descriptionLineHeight);
     });
 
     // Close X
-    const closeX = logicalWidth - closePadding - closeSize;
-    const closeY = padding + (textBlockHeight - closeSize) * 0.5;
-    ctx2.strokeStyle = "rgba(255,255,255,0.8)";
+    const closeX = logicalWidth - padding - closeSize;
+    const closeY = padding + (headerHeight - padding * 2 - closeSize) * 0.5;
+    ctx2.strokeStyle = "rgba(33,37,41,0.7)";
     ctx2.lineWidth = 2.5;
     ctx2.beginPath();
     ctx2.moveTo(closeX, closeY);

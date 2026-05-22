@@ -1,10 +1,12 @@
+import { normalizeMarkerLabel, type MarkerLabel } from "./markerLabel";
+
 const BASE = import.meta.env.VITE_API_URL as string | undefined;
 
 export type ViewerMarkerPayload = {
   icon?: string;
   scale?: number;
   position?: { x?: number; y?: number; z?: number };
-  text?: string;
+  label?: MarkerLabel;
 };
 
 export type Field = {
@@ -60,8 +62,8 @@ const toFiniteNumber = (value: unknown): number | undefined => {
 const normalizeMarker = (raw: unknown): ViewerMarkerPayload | null => {
   const value = unwrapAttributeValue(raw);
 
-  if (Array.isArray(value) && value.length >= 4) {
-    const [iconRaw, scaleRaw, positionRaw, textRaw] = value;
+  if (Array.isArray(value) && value.length >= 3) {
+    const [iconRaw, scaleRaw, positionRaw, labelRaw] = value;
     if (!Array.isArray(positionRaw) || positionRaw.length < 3) return null;
     const [x, y, z] = positionRaw.slice(0, 3).map(toFiniteNumber);
     if (x === undefined || y === undefined || z === undefined) return null;
@@ -69,7 +71,7 @@ const normalizeMarker = (raw: unknown): ViewerMarkerPayload | null => {
       icon: toStringValue(iconRaw),
       scale: toFiniteNumber(scaleRaw),
       position: { x, y, z },
-      text: toStringValue(textRaw),
+      label: normalizeMarkerLabel(labelRaw),
     };
   }
 
@@ -97,7 +99,7 @@ const normalizeMarker = (raw: unknown): ViewerMarkerPayload | null => {
     icon: toStringValue(value.icon ?? value.Icon),
     scale: toFiniteNumber(value.scale ?? value.Scale),
     position,
-    text: toStringValue(value.text ?? value.Text),
+    label: normalizeMarkerLabel(value.label ?? value.Label ?? value.text ?? value.Text),
   };
 };
 

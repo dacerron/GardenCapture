@@ -8,6 +8,7 @@ import type { MarkerInput } from "./three/WorldMarkers";
 // import { listFields, updateFieldMarkers } from "./adminApi";
 import { updateField } from "./adminApi";
 import type { Field as AdminField, MarkerPayload } from "./adminApi";
+import { normalizeMarkerLabel, type MarkerLabel } from "./markerLabel";
 import "./index.css";
 
 const PLACEMENT_DISTANCE_DEFAULT = 1;
@@ -25,7 +26,7 @@ const DEFAULT_MARKER_ICON = MARKER_ICON_OPTIONS[0].value;
 type EditorMarker = {
   position: [number, number, number];
   radius?: number;
-  label?: string;
+  label?: MarkerLabel;
   icon?: string;
 };
 
@@ -61,15 +62,15 @@ function backendMarkersToEditorMarkers(raw: MarkerPayload[] | undefined): Editor
   if (!raw || !Array.isArray(raw)) return [];
   return raw
     .map((entry) => {
-      if (!Array.isArray(entry) || entry.length < 4) return null;
-      const [icon, scale, position, text] = entry;
+      if (!Array.isArray(entry) || entry.length < 3) return null;
+      const [icon, scale, position, label] = entry;
       if (!Array.isArray(position) || position.length < 3) return null;
       if (position.some((value) => typeof value !== "number" || !Number.isFinite(value))) return null;
       const [x, y, z] = position as [number, number, number];
       return {
         position: [x, y, z],
         radius: typeof scale === "number" && Number.isFinite(scale) ? scale : undefined,
-        label: typeof text === "string" ? text : "",
+        label: normalizeMarkerLabel(label),
         icon: typeof icon === "string" ? icon : undefined,
       };
     })
@@ -86,7 +87,7 @@ function editorMarkersToBackend(markers: EditorMarker[]): MarkerPayload[] {
     ];
     const radius = typeof marker.radius === "number" && Number.isFinite(marker.radius) ? marker.radius : 0.25;
     const icon = marker.icon && marker.icon.trim() ? marker.icon : DEFAULT_MARKER_ICON;
-    return [icon, radius, normalizedPosition, marker.label ?? ""];
+    return [icon, radius, normalizedPosition, normalizeMarkerLabel(marker.label)];
   });
 }
 
@@ -109,7 +110,7 @@ function parseApiMarkers(raw: Array<Record<string, unknown>> | undefined): Edito
       return {
         position: [x, y, z],
         radius: scale,
-        label: typeof m.text === "string" ? m.text : "",
+        label: normalizeMarkerLabel(m.label ?? m.text),
         icon: typeof m.icon === "string" ? m.icon : undefined,
       };
     })
@@ -133,7 +134,7 @@ function editorMarkersToInput(
   return markers.map((m) => ({
     position: m.position,
     radius: m.radius,
-    label: typeof m.label === "string" ? m.label : "",
+    label: normalizeMarkerLabel(m.label),
     texture: toTexture(m.icon),
   }));
 }
@@ -185,7 +186,7 @@ function parseMarkerFormParam(raw: string | null): EditorMarker | null {
     const z = toFiniteNumber(parsed.posZ);
     if (x === null || y === null || z === null) return null;
     const radius = toFiniteNumber(parsed.scale) ?? undefined;
-    const label = typeof parsed.text === "string" ? parsed.text : "";
+    const label = normalizeMarkerLabel(parsed.label ?? parsed.text);
     const icon = typeof parsed.icon === "string" ? parsed.icon : undefined;
     return {
       position: [x, y, z],
@@ -255,7 +256,7 @@ export default function Editor() {
             position: [0, 0, 0] as [number, number, number],
             radius: placementRadius,
             texture: getTextureForIcon(iconUrl, textureCacheRef.current),
-            label: "",
+            label: ["", ""] as MarkerLabel,
           }
         : undefined;
     const selectedIndex =
@@ -270,7 +271,7 @@ export default function Editor() {
     const newMarker: EditorMarker = {
       position: [pos.x, pos.y, pos.z],
       radius: placementRadius,
-      label: "New marker",
+      label: ["New marker", ""],
       icon: iconUrl,
     };
     setMarkers((prev) => [...prev, newMarker]);
@@ -784,7 +785,7 @@ export default function Editor() {
                   cursor: mode === "edit" ? "pointer" : "default",
                 }}
               >
-                {m.label || `Marker ${i + 1}`}
+                {m.label?.[0] || `Marker ${i + 1}`}
               </button>
             </li>
           ))}
@@ -795,14 +796,18 @@ export default function Editor() {
             <h3 style={{ margin: 0, fontSize: "1rem", color: "#e6edf3" }}>Edit marker</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
               <div>
-                <label style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>Label</label>
+                <label style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>Title</label>
                 <input
                   type="text"
-                  value={selectedMarker.label ?? ""}
+                  value={selectedMarker.label?.[0] ?? ""}
                   onChange={(e) =>
                     setMarkers((prev) => {
                       const next = [...prev];
-                      next[selectedMarkerIndex] = { ...next[selectedMarkerIndex], label: e.target.value };
+                      const [, description] = normalizeMarkerLabel(next[selectedMarkerIndex]?.label);
+                      next[selectedMarkerIndex] = {
+                        ...next[selectedMarkerIndex],
+                        label: [e.target.value, description],
+                      };
                       return next;
                     })
                   }
@@ -815,6 +820,35 @@ export default function Editor() {
                     background: "rgba(0,0,0,0.3)",
                     color: "#e6edf3",
                     fontSize: "0.875rem",
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>Description</label>
+                <textarea
+                  value={selectedMarker.label?.[1] ?? ""}
+                  onChange={(e) =>
+                    setMarkers((prev) => {
+                      const next = [...prev];
+                      const [title] = normalizeMarkerLabel(next[selectedMarkerIndex]?.label);
+                      next[selectedMarkerIndex] = {
+                        ...next[selectedMarkerIndex],
+                        label: [title, e.target.value],
+                      };
+                      return next;
+                    })
+                  }
+                  style={{
+                    width: "100%",
+                    minHeight: 72,
+                    padding: "0.4rem 0.6rem",
+                    marginTop: "0.25rem",
+                    borderRadius: 6,
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    background: "rgba(0,0,0,0.3)",
+                    color: "#e6edf3",
+                    fontSize: "0.875rem",
+                    resize: "vertical",
                   }}
                 />
               </div>

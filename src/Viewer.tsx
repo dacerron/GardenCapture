@@ -5,6 +5,7 @@ import { fetchFieldById, type Field, type ViewerMarkerPayload } from "./fieldApi
 import { ThreeApp } from "./three/ThreeApp";
 import type { SphericalHarmonicsDegree } from "./three/GaussianViewer";
 import type { SceneInfo } from "./three/ScreenSpace";
+import { normalizeMarkerLabel } from "./markerLabel";
 import "./index.css";
 
 // narrows to objects that have setGaussianPath
@@ -36,8 +37,20 @@ const resolveAssetUrl = (raw: string) => {
 const parseMarkerQueryParam = (raw: string | null): ViewerMarkerPayload[] => {
   if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((marker) => {
+        if (!marker || typeof marker !== "object" || Array.isArray(marker)) return null;
+        const value = marker as Record<string, unknown>;
+        return {
+          icon: typeof value.icon === "string" ? value.icon : undefined,
+          scale: typeof value.scale === "number" ? value.scale : undefined,
+          position: value.position as ViewerMarkerPayload["position"],
+          label: normalizeMarkerLabel(value.label ?? value.text),
+        };
+      })
+      .filter(Boolean) as ViewerMarkerPayload[];
   } catch (err) {
     console.warn("Failed to parse marker payload", err);
     return [];
@@ -275,14 +288,14 @@ export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onB
             position: [x, y, z] as [number, number, number],
             radius,
             texture: toTexture(marker.icon),
-            label: typeof marker.text === "string" ? marker.text : "",
+            label: normalizeMarkerLabel(marker.label),
           };
         })
         .filter(Boolean) as Array<{
           position: [number, number, number];
           radius?: number;
           texture?: THREE.Texture;
-          label?: string;
+          label?: ReturnType<typeof normalizeMarkerLabel>;
         }>;
 
       app.setWorldMarkers(worldMarkers);

@@ -1,6 +1,7 @@
 import { type CSSProperties, type FormEvent, Fragment, useEffect, useState } from "react";
 import { fetchAuthSession, signInWithRedirect } from "aws-amplify/auth";
 import { type CreateFieldPayload, type MarkerPayload, createField, deleteField, listFields, updateField } from "./adminApi";
+import { normalizeMarkerLabel } from "./markerLabel";
 
 type FieldItem = {
   FieldID: string;
@@ -581,30 +582,35 @@ export default function Admin() {
                                     <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>Pos X</th>
                                     <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>Pos Y</th>
                                     <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>Pos Z</th>
-                                    <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>Text</th>
+                                    <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>Title</th>
+                                    <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>Description</th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {markersArray.map((marker, idx) => (
-                                    <tr key={`${it.FieldID}-marker-${idx}`} style={{ background: "#111" }}>
-                                      <td style={{ borderBottom: "1px solid #222", padding: 4 }}>
-                                        {marker[0] ? (
-                                          <img
-                                            src={marker[0]}
-                                            alt={`marker icon ${idx + 1}`}
-                                            style={{ width: 32, height: 32, objectFit: "contain" }}
-                                          />
-                                        ) : (
-                                          ""
-                                        )}
-                                      </td>
-                                      <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[1] ?? ""}</td>
-                                      <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[2]?.[0] ?? ""}</td>
-                                      <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[2]?.[1] ?? ""}</td>
-                                      <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[2]?.[2] ?? ""}</td>
-                                      <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[3] ?? ""}</td>
-                                    </tr>
-                                  ))}
+                                  {markersArray.map((marker, idx) => {
+                                    const [title, description] = normalizeMarkerLabel(marker[3]);
+                                    return (
+                                      <tr key={`${it.FieldID}-marker-${idx}`} style={{ background: "#111" }}>
+                                        <td style={{ borderBottom: "1px solid #222", padding: 4 }}>
+                                          {marker[0] ? (
+                                            <img
+                                              src={marker[0]}
+                                              alt={`marker icon ${idx + 1}`}
+                                              style={{ width: 32, height: 32, objectFit: "contain" }}
+                                            />
+                                          ) : (
+                                            ""
+                                          )}
+                                        </td>
+                                        <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[1] ?? ""}</td>
+                                        <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[2]?.[0] ?? ""}</td>
+                                        <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[2]?.[1] ?? ""}</td>
+                                        <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[2]?.[2] ?? ""}</td>
+                                        <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{title}</td>
+                                        <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{description}</td>
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             )}
