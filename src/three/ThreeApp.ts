@@ -24,16 +24,22 @@ const DEFAULT_PLAY_AREA_BOUNDS = new THREE.Box3(
   new THREE.Vector3(25, 15, 25)
 );
 const DEFAULT_ORBIT_CAMERA_OFFSET = new THREE.Vector3(0, 2.5, 5);
-const MARKER_VIEW_TRANSITION_DURATION = 0.9;
+const MARKER_VIEW_TRANSITION_MIN_DURATION = 1.1;
+const MARKER_VIEW_TRANSITION_MAX_DURATION = 2.2;
+const MARKER_VIEW_TRANSITION_DISTANCE_FACTOR = 0.018;
+const MARKER_VIEW_TRANSITION_ARC_FACTOR = 0.3;
 
 type CameraTransition = {
   target: THREE.Vector3;
   startPosition: THREE.Vector3;
   endPosition: THREE.Vector3;
+  startQuaternion: THREE.Quaternion;
+  endQuaternion: THREE.Quaternion;
   startDirection: THREE.Vector3;
   endRotation: THREE.Quaternion;
   startDistance: number;
   endDistance: number;
+  duration: number;
   elapsed: number;
   spherical: boolean;
 };
@@ -467,8 +473,12 @@ export class ThreeApp {
     markerPosition: [number, number, number],
     viewPosition: [number, number, number]
   ) {
+    const startPosition = new THREE.Vector3();
+    const startQuaternion = new THREE.Quaternion();
+    this.camera.getWorldPosition(startPosition);
+    this.camera.getWorldQuaternion(startQuaternion);
+
     const target = new THREE.Vector3(...markerPosition);
-    const startPosition = this.camera.position.clone();
     const endPosition = new THREE.Vector3(...viewPosition);
     const startOffset = startPosition.clone().sub(target);
     const endOffset = endPosition.clone().sub(target);
@@ -477,23 +487,36 @@ export class ThreeApp {
     const spherical = startDistance > 0.0001 && endDistance > 0.0001;
     const startDirection = spherical ? startOffset.normalize() : new THREE.Vector3();
     const endDirection = spherical ? endOffset.normalize() : new THREE.Vector3();
+    const arcAngle = spherical ? startDirection.angleTo(endDirection) : 0;
+    const travelDistance = startPosition.distanceTo(endPosition);
+    const duration = THREE.MathUtils.clamp(
+      MARKER_VIEW_TRANSITION_MIN_DURATION +
+        travelDistance * MARKER_VIEW_TRANSITION_DISTANCE_FACTOR +
+        arcAngle * MARKER_VIEW_TRANSITION_ARC_FACTOR,
+      MARKER_VIEW_TRANSITION_MIN_DURATION,
+      MARKER_VIEW_TRANSITION_MAX_DURATION
+    );
+    const destinationCamera = this.camera.clone();
+    destinationCamera.position.copy(endPosition);
+    destinationCamera.lookAt(target);
 
     this.cameraTransition = {
       target,
       startPosition,
       endPosition,
+      startQuaternion,
+      endQuaternion: destinationCamera.quaternion.clone(),
       startDirection,
       endRotation: spherical
         ? new THREE.Quaternion().setFromUnitVectors(startDirection, endDirection)
         : new THREE.Quaternion(),
       startDistance,
       endDistance,
+      duration,
       elapsed: 0,
       spherical,
     };
 
-    this.orbitControls?.target.copy(target);
-    this.camera.lookAt(target);
     this.applyInteractionState(false);
   }
 
@@ -639,8 +662,8 @@ export class ThreeApp {
     if (!transition) return;
 
     transition.elapsed += dt;
-    const progress = Math.min(transition.elapsed / MARKER_VIEW_TRANSITION_DURATION, 1);
-    const eased = progress * progress * (3 - 2 * progress);
+    const progress = Math.min(transition.elapsed / transition.duration, 1);
+    const eased = progress * progress * progress * (progress * (progress * 6 - 15) + 10);
 
     if (transition.spherical) {
       const rotation = new THREE.Quaternion().slerp(
@@ -658,7 +681,11 @@ export class ThreeApp {
       this.camera.position.lerpVectors(transition.startPosition, transition.endPosition, eased);
     }
 
-    this.camera.lookAt(transition.target);
+    this.camera.quaternion.slerpQuaternions(
+      transition.startQuaternion,
+      transition.endQuaternion,
+      eased
+    );
     if (progress < 1) return;
 
     this.camera.position.copy(transition.endPosition);
