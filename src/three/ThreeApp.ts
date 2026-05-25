@@ -24,12 +24,26 @@ const DEFAULT_PLAY_AREA_BOUNDS = new THREE.Box3(
   new THREE.Vector3(25, 15, 25)
 );
 const DEFAULT_ORBIT_CAMERA_OFFSET = new THREE.Vector3(0, 2.5, 5);
+const MARKER_VIEW_TRANSITION_DURATION = 0.9;
+
+type CameraTransition = {
+  target: THREE.Vector3;
+  startPosition: THREE.Vector3;
+  endPosition: THREE.Vector3;
+  startDirection: THREE.Vector3;
+  endRotation: THREE.Quaternion;
+  startDistance: number;
+  endDistance: number;
+  elapsed: number;
+  spherical: boolean;
+};
 
 type ThreeAppOptions = {
   defaultControlMode?: ControlMode;
   onBack?: () => void;
   sceneInfo?: SceneInfo;
   sphericalHarmonicsDegree?: SphericalHarmonicsDegree;
+  sidebarUi?: boolean;
 };
 
 export class ThreeApp {
@@ -60,6 +74,7 @@ export class ThreeApp {
   private readonly onBack?: () => void;
   private readonly sceneInfo?: SceneInfo;
   private readonly sphericalHarmonicsDegree: SphericalHarmonicsDegree;
+  private readonly sidebarUi: boolean;
   private flySpeed = 0.5;
   private mobileOrbitTool: MobileOrbitTool = "rotate";
   private screenUI!: ScreenSpaceUI;
@@ -87,6 +102,7 @@ export class ThreeApp {
   private markerEditIndex: number | null = null;
   private onMarkerPositionCommit?: (position: [number, number, number]) => void;
   private activeTransformTarget: "interest" | "marker" | null = null;
+  private cameraTransition: CameraTransition | null = null;
 
   // cene at reduced res, markers at full res
   private sceneRenderTarget: THREE.WebGLRenderTarget | null = null;
@@ -104,6 +120,7 @@ export class ThreeApp {
     this.onBack = options?.onBack;
     this.sceneInfo = options?.sceneInfo;
     this.sphericalHarmonicsDegree = options?.sphericalHarmonicsDegree ?? 0;
+    this.sidebarUi = options?.sidebarUi ?? false;
     if (ThreeApp.isMobileLike()) {
       this.perfSettings = PERFORMANCE_PRESETS.low;
     }
@@ -161,7 +178,7 @@ export class ThreeApp {
   }
 
   private initUI() {
-    this.screenUI = new ScreenSpaceUI(this.container);
+    this.screenUI = new ScreenSpaceUI(this.container, this.sidebarUi);
     this.overlay = new LoadingOverlay(this.container);
     this.screenUI.setMobileBackHandler(this.onBack);
     this.screenUI.setRuntimeInfo({
@@ -284,7 +301,9 @@ export class ThreeApp {
   }
 
   private update(dt: number) {
-    if (this.controlMode === "fly") {
+    if (this.cameraTransition) {
+      this.updateCameraTransition(dt);
+    } else if (this.controlMode === "fly") {
       this.flyControls?.update(dt);
     } else {
       this.orbitControls?.update();
@@ -355,11 +374,14 @@ export class ThreeApp {
     try {
       await this.gaussian.loadScene(path, (state) => this.updateOverlayForGaussianLoad(state));
       if (!this.destroyed) {
+        this.cameraTransition = null;
         this.camera.position.copy(this.currentStartPos).add(DEFAULT_ORBIT_CAMERA_OFFSET);
         if (this.orbitControls) {
           this.orbitControls.target.copy(this.currentStartPos);
           this.orbitControls.update();
         }
+        this.flyControls?.syncFromCamera();
+        this.applyInteractionState(false);
       }
     } finally {
       if (!this.destroyed) this.overlay.hide();
@@ -431,6 +453,62 @@ export class ThreeApp {
 
   public getCamera(): THREE.Camera {
     return this.camera;
+  }
+
+  public getCameraPosition(): [number, number, number] {
+    return [this.camera.position.x, this.camera.position.y, this.camera.position.z];
+  }
+
+  public getViewerAddonHost(): HTMLDivElement {
+    return this.screenUI.getViewerAddonHost();
+  }
+
+  public moveCameraToMarkerView(
+    markerPosition: [number, number, number],
+    viewPosition: [number, number, number]
+  ) {
+    const target = new THREE.Vector3(...markerPosition);
+    const startPosition = this.camera.position.clone();
+    const endPosition = new THREE.Vector3(...viewPosition);
+    const startOffset = startPosition.clone().sub(target);
+    const endOffset = endPosition.clone().sub(target);
+    const startDistance = startOffset.length();
+    const endDistance = endOffset.length();
+    const spherical = startDistance > 0.0001 && endDistance > 0.0001;
+    const startDirection = spherical ? startOffset.normalize() : new THREE.Vector3();
+    const endDirection = spherical ? endOffset.normalize() : new THREE.Vector3();
+
+    this.cameraTransition = {
+      target,
+      startPosition,
+      endPosition,
+      startDirection,
+      endRotation: spherical
+        ? new THREE.Quaternion().setFromUnitVectors(startDirection, endDirection)
+        : new THREE.Quaternion(),
+      startDistance,
+      endDistance,
+      elapsed: 0,
+      spherical,
+    };
+
+    this.orbitControls?.target.copy(target);
+    this.camera.lookAt(target);
+    this.applyInteractionState(false);
+  }
+
+  public toggleWorldMarkerLabel(index: number) {
+    const sprite = this.markers.getSpriteAt(index);
+    if (sprite) {
+      this.markers.toggleLabelForSprite(sprite, this.camera);
+    }
+  }
+
+  public showWorldMarkerLabel(index: number) {
+    const sprite = this.markers.getSpriteAt(index);
+    if (sprite) {
+      this.markers.showLabelForSprite(sprite, this.camera);
+    }
   }
 
   /** When > 0, placement preview is shown. update its position each frame via setPlacementPreviewPosition. */
@@ -554,6 +632,42 @@ export class ThreeApp {
     }
 
     this.overlay.setHint("Finalizing virtual soil...");
+  }
+
+  private updateCameraTransition(dt: number) {
+    const transition = this.cameraTransition;
+    if (!transition) return;
+
+    transition.elapsed += dt;
+    const progress = Math.min(transition.elapsed / MARKER_VIEW_TRANSITION_DURATION, 1);
+    const eased = progress * progress * (3 - 2 * progress);
+
+    if (transition.spherical) {
+      const rotation = new THREE.Quaternion().slerp(
+        transition.endRotation,
+        eased
+      );
+      const direction = transition.startDirection.clone().applyQuaternion(rotation);
+      const distance = THREE.MathUtils.lerp(
+        transition.startDistance,
+        transition.endDistance,
+        eased
+      );
+      this.camera.position.copy(transition.target).addScaledVector(direction, distance);
+    } else {
+      this.camera.position.lerpVectors(transition.startPosition, transition.endPosition, eased);
+    }
+
+    this.camera.lookAt(transition.target);
+    if (progress < 1) return;
+
+    this.camera.position.copy(transition.endPosition);
+    this.camera.lookAt(transition.target);
+    this.cameraTransition = null;
+    this.flyControls?.syncFromCamera();
+    this.orbitControls?.target.copy(transition.target);
+    this.orbitControls?.update();
+    this.applyInteractionState(false);
   }
 
   private applyPerformanceSettings(settings: PerformanceSettings) {
@@ -722,6 +836,7 @@ export class ThreeApp {
   }
 
   private resetOrbitCamera() {
+    this.cameraTransition = null;
     this.setControlMode("orbit");
     this.camera.position.copy(this.currentStartPos).add(DEFAULT_ORBIT_CAMERA_OFFSET);
     if (this.orbitControls) {
@@ -729,6 +844,8 @@ export class ThreeApp {
       this.orbitControls.update();
       this.applyMobileOrbitTool();
     }
+    this.flyControls?.syncFromCamera();
+    this.applyInteractionState(false);
   }
 
   private applyInteractionState(isTransformDragging: boolean) {
@@ -750,11 +867,11 @@ export class ThreeApp {
     this.markerPicking?.setEnabled(!isTransformDragging);
 
     if (this.orbitControls) {
-      this.orbitControls.enabled = !isTransformDragging;
+      this.orbitControls.enabled = !isTransformDragging && !this.cameraTransition;
     }
 
     this.flyControls?.setEnabled(
-      this.controlMode === "fly" && !isTransformDragging
+      this.controlMode === "fly" && !isTransformDragging && !this.cameraTransition
     );
   }
 

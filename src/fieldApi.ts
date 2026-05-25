@@ -6,6 +6,7 @@ export type ViewerMarkerPayload = {
   icon?: string;
   scale?: number;
   position?: { x?: number; y?: number; z?: number };
+  viewPosition?: { x?: number; y?: number; z?: number };
   label?: MarkerLabel;
 };
 
@@ -59,46 +60,60 @@ const toFiniteNumber = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const normalizePosition = (raw: unknown): ViewerMarkerPayload["position"] | undefined => {
+  if (Array.isArray(raw) && raw.length >= 3) {
+    const [x, y, z] = raw.slice(0, 3).map(toFiniteNumber);
+    if (x !== undefined && y !== undefined && z !== undefined) {
+      return { x, y, z };
+    }
+  } else if (isRecord(raw)) {
+    const x = toFiniteNumber(raw.x ?? raw.X);
+    const y = toFiniteNumber(raw.y ?? raw.Y);
+    const z = toFiniteNumber(raw.z ?? raw.Z);
+    if (x !== undefined && y !== undefined && z !== undefined) {
+      return { x, y, z };
+    }
+  }
+  return undefined;
+};
+
+const deriveViewPosition = (position: NonNullable<ViewerMarkerPayload["position"]>) => ({
+  x: position.x,
+  y: (position.y ?? 0) + 2.5,
+  z: (position.z ?? 0) + 5,
+});
+
 const normalizeMarker = (raw: unknown): ViewerMarkerPayload | null => {
   const value = unwrapAttributeValue(raw);
 
   if (Array.isArray(value) && value.length >= 3) {
-    const [iconRaw, scaleRaw, positionRaw, labelRaw] = value;
-    if (!Array.isArray(positionRaw) || positionRaw.length < 3) return null;
-    const [x, y, z] = positionRaw.slice(0, 3).map(toFiniteNumber);
-    if (x === undefined || y === undefined || z === undefined) return null;
+    const [iconRaw, scaleRaw, positionRaw] = value;
+    const position = normalizePosition(positionRaw);
+    if (!position) return null;
+    const isCurrentShape = value.length >= 5;
+    const viewPosition = isCurrentShape ? normalizePosition(value[3]) : undefined;
+    const labelRaw = isCurrentShape ? value[4] : value[3];
     return {
       icon: toStringValue(iconRaw),
       scale: toFiniteNumber(scaleRaw),
-      position: { x, y, z },
+      position,
+      viewPosition: viewPosition ?? deriveViewPosition(position),
       label: normalizeMarkerLabel(labelRaw),
     };
   }
 
   if (!isRecord(value)) return null;
-  const pos = value.position ?? value.Position;
-  let position: ViewerMarkerPayload["position"];
-
-  if (Array.isArray(pos) && pos.length >= 3) {
-    const [x, y, z] = pos.slice(0, 3).map(toFiniteNumber);
-    if (x !== undefined && y !== undefined && z !== undefined) {
-      position = { x, y, z };
-    }
-  } else if (isRecord(pos)) {
-    const x = toFiniteNumber(pos.x ?? pos.X);
-    const y = toFiniteNumber(pos.y ?? pos.Y);
-    const z = toFiniteNumber(pos.z ?? pos.Z);
-    if (x !== undefined && y !== undefined && z !== undefined) {
-      position = { x, y, z };
-    }
-  }
-
+  const position = normalizePosition(value.position ?? value.Position);
   if (!position) return null;
+  const viewPosition = normalizePosition(
+    value.viewPosition ?? value.ViewPosition ?? value.view_position
+  );
 
   return {
     icon: toStringValue(value.icon ?? value.Icon),
     scale: toFiniteNumber(value.scale ?? value.Scale),
     position,
+    viewPosition: viewPosition ?? deriveViewPosition(position),
     label: normalizeMarkerLabel(value.label ?? value.Label ?? value.text ?? value.Text),
   };
 };

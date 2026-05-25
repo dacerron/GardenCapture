@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import * as THREE from "three";
 import { ThreeApp } from "./three/ThreeApp";
@@ -25,6 +26,7 @@ const DEFAULT_MARKER_ICON = MARKER_ICON_OPTIONS[0].value;
 
 type EditorMarker = {
   position: [number, number, number];
+  viewPosition: [number, number, number];
   radius?: number;
   label?: MarkerLabel;
   icon?: string;
@@ -58,19 +60,48 @@ function parseStartPos(raw: unknown): [number, number, number] | null {
   return null;
 }
 
-function backendMarkersToEditorMarkers(raw: MarkerPayload[] | undefined): EditorMarker[] {
+function parseVector(raw: unknown): [number, number, number] | null {
+  if (Array.isArray(raw) && raw.length >= 3) {
+    const [x, y, z] = raw.slice(0, 3).map(toFiniteNumber);
+    if (x !== null && y !== null && z !== null) return [x, y, z];
+  }
+
+  if (raw && typeof raw === "object") {
+    const value = raw as { x?: unknown; y?: unknown; z?: unknown };
+    const x = toFiniteNumber(value.x);
+    const y = toFiniteNumber(value.y);
+    const z = toFiniteNumber(value.z);
+    if (x !== null && y !== null && z !== null) return [x, y, z];
+  }
+
+  return null;
+}
+
+function deriveViewPosition(position: [number, number, number]): [number, number, number] {
+  return [position[0], position[1] + 2.5, position[2] + 5];
+}
+
+function backendMarkersToEditorMarkers(
+  raw: unknown[] | undefined,
+  currentCameraPosition?: [number, number, number] | null
+): EditorMarker[] {
   if (!raw || !Array.isArray(raw)) return [];
   return raw
     .map((entry) => {
       if (!Array.isArray(entry) || entry.length < 3) return null;
-      const [icon, scale, position, label] = entry;
-      if (!Array.isArray(position) || position.length < 3) return null;
-      if (position.some((value) => typeof value !== "number" || !Number.isFinite(value))) return null;
-      const [x, y, z] = position as [number, number, number];
+      const [icon, scale] = entry;
+      const position = parseVector(entry[2]);
+      if (!position) return null;
+      const isCurrentShape = entry.length >= 5;
+      const viewPosition =
+        (isCurrentShape ? parseVector(entry[3]) : null) ??
+        currentCameraPosition ??
+        deriveViewPosition(position);
       return {
-        position: [x, y, z],
+        position,
+        viewPosition,
         radius: typeof scale === "number" && Number.isFinite(scale) ? scale : undefined,
-        label: normalizeMarkerLabel(label),
+        label: normalizeMarkerLabel(isCurrentShape ? entry[4] : entry[3]),
         icon: typeof icon === "string" ? icon : undefined,
       };
     })
@@ -85,10 +116,26 @@ function editorMarkersToBackend(markers: EditorMarker[]): MarkerPayload[] {
       Number.isFinite(yRaw) ? yRaw : 0,
       Number.isFinite(zRaw) ? zRaw : 0,
     ];
+    const normalizedViewPosition: [number, number, number] = marker.viewPosition.map((value, index) =>
+      Number.isFinite(value) ? value : deriveViewPosition(normalizedPosition)[index]
+    ) as [number, number, number];
     const radius = typeof marker.radius === "number" && Number.isFinite(marker.radius) ? marker.radius : 0.25;
     const icon = marker.icon && marker.icon.trim() ? marker.icon : DEFAULT_MARKER_ICON;
-    return [icon, radius, normalizedPosition, normalizeMarkerLabel(marker.label)];
+    return [icon, radius, normalizedPosition, normalizedViewPosition, normalizeMarkerLabel(marker.label)];
   });
+}
+
+function cloneEditorMarkers(markers: EditorMarker[]): EditorMarker[] {
+  return markers.map((marker) => ({
+    ...marker,
+    position: [...marker.position] as [number, number, number],
+    viewPosition: [...marker.viewPosition] as [number, number, number],
+    label: normalizeMarkerLabel(marker.label),
+  }));
+}
+
+function markerSnapshot(markers: EditorMarker[]): string {
+  return JSON.stringify(editorMarkersToBackend(markers));
 }
 
 const resolveAssetUrl = (raw: string) => {
@@ -97,18 +144,19 @@ const resolveAssetUrl = (raw: string) => {
   return new URL(`/${raw}`, window.location.origin).href;
 };
 
-function parseApiMarkers(raw: Array<Record<string, unknown>> | undefined): EditorMarker[] {
+function parseApiMarkers(
+  raw: Array<Record<string, unknown>> | undefined,
+  currentCameraPosition?: [number, number, number] | null
+): EditorMarker[] {
   if (!raw || !Array.isArray(raw)) return [];
   return raw
     .map((m) => {
-      const pos = m.position as { x?: number; y?: number; z?: number } | undefined;
-      const x = pos?.x;
-      const y = pos?.y;
-      const z = pos?.z;
-      if (![x, y, z].every((v) => typeof v === "number" && Number.isFinite(v))) return null;
+      const position = parseVector(m.position);
+      if (!position) return null;
       const scale = typeof m.scale === "number" && Number.isFinite(m.scale) ? m.scale : undefined;
       return {
-        position: [x, y, z],
+        position,
+        viewPosition: parseVector(m.viewPosition) ?? currentCameraPosition ?? deriveViewPosition(position),
         radius: scale,
         label: normalizeMarkerLabel(m.label ?? m.text),
         icon: typeof m.icon === "string" ? m.icon : undefined,
@@ -176,6 +224,10 @@ function isCoordinateDraft(value: string): boolean {
   return /^-?\d*(?:\.\d*)?$/.test(value.trim());
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function parseMarkerFormParam(raw: string | null): EditorMarker | null {
   if (!raw) return null;
   try {
@@ -188,8 +240,10 @@ function parseMarkerFormParam(raw: string | null): EditorMarker | null {
     const radius = toFiniteNumber(parsed.scale) ?? undefined;
     const label = normalizeMarkerLabel(parsed.label ?? parsed.text);
     const icon = typeof parsed.icon === "string" ? parsed.icon : undefined;
+    const position: [number, number, number] = [x, y, z];
     return {
-      position: [x, y, z],
+      position,
+      viewPosition: parseVector(parsed.viewPosition) ?? deriveViewPosition(position),
       radius,
       label,
       icon,
@@ -220,6 +274,7 @@ export default function Editor() {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const appRef = useRef<ThreeApp | null>(null);
   const textureCacheRef = useRef<Map<string, THREE.Texture>>(new Map());
+  const pendingLabelMarkerIndexRef = useRef<number | null>(null);
   const [searchParams] = useSearchParams();
   const fieldIdParam = searchParams.get("fieldId");
   const fieldId = fieldIdParam ? fieldIdParam.trim() : "";
@@ -231,20 +286,68 @@ export default function Editor() {
   const [pins, setPins] = useState<Pin[]>([]);
   const [selectedPinIndex, setSelectedPinIndex] = useState<number>(0);
   const [markers, setMarkers] = useState<EditorMarker[]>([]);
+  const [savedMarkers, setSavedMarkers] = useState<EditorMarker[]>([]);
   const [mode, setMode] = useState<"preview" | "place" | "edit">("preview");
-  const [editTarget, setEditTarget] = useState<"marker" | "interest" | null>(null);
-  const prevModeRef = useRef<typeof mode>(mode);
   const [placementDistance, setPlacementDistance] = useState(PLACEMENT_DISTANCE_DEFAULT);
   const [selectedMarkerIndex, setSelectedMarkerIndex] = useState<number | null>(null);
   const [placementIconIndex, setPlacementIconIndex] = useState(0);
   const [placementRadius, setPlacementRadius] = useState(0.1);
+  const [placementTitle, setPlacementTitle] = useState("");
+  const [placementDescription, setPlacementDescription] = useState("");
+  const [placementViewPosition, setPlacementViewPosition] = useState<[number, number, number] | null>(null);
   const [managedField, setManagedField] = useState<AdminField | null>(null);
   const [fieldStatus, setFieldStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [fieldError, setFieldError] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState("");
   const [positionDrafts, setPositionDrafts] = useState<[string, string, string]>(["0.00", "0.00", "0.00"]);
+  const [viewPositionDrafts, setViewPositionDrafts] = useState<[string, string, string]>(["0.00", "0.00", "0.00"]);
   const [axisStartPos, setAxisStartPos] = useState<[number, number, number] | null>(null);
+  const [showViewPositionNotice, setShowViewPositionNotice] = useState(false);
+  const [markerListHost, setMarkerListHost] = useState<HTMLDivElement | null>(null);
+  const viewPositionNoticeTimeoutRef = useRef<number | null>(null);
+
+  const getCurrentCameraPosition = useCallback(
+    () => appRef.current?.getCameraPosition() ?? null,
+    []
+  );
+
+  const moveCameraToMarker = useCallback((marker: EditorMarker) => {
+    appRef.current?.moveCameraToMarkerView(marker.position, marker.viewPosition);
+  }, []);
+
+  const openMarker = useCallback(
+    (marker: EditorMarker, index: number) => {
+      moveCameraToMarker(marker);
+      if (selectedMarkerIndex !== index) {
+        pendingLabelMarkerIndexRef.current = index;
+        setSelectedMarkerIndex(index);
+        return;
+      }
+      appRef.current?.showWorldMarkerLabel(index);
+    },
+    [moveCameraToMarker, selectedMarkerIndex]
+  );
+
+  const notifyViewPositionSet = useCallback(() => {
+    setShowViewPositionNotice(true);
+    if (viewPositionNoticeTimeoutRef.current !== null) {
+      window.clearTimeout(viewPositionNoticeTimeoutRef.current);
+    }
+    viewPositionNoticeTimeoutRef.current = window.setTimeout(() => {
+      setShowViewPositionNotice(false);
+      viewPositionNoticeTimeoutRef.current = null;
+    }, 2200);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (viewPositionNoticeTimeoutRef.current !== null) {
+        window.clearTimeout(viewPositionNoticeTimeoutRef.current);
+      }
+    },
+    []
+  );
 
   const syncMarkersToApp = useCallback(() => {
     if (!appRef.current) return;
@@ -259,10 +362,13 @@ export default function Editor() {
             label: ["", ""] as MarkerLabel,
           }
         : undefined;
-    const selectedIndex =
-      mode === "edit" && editTarget !== "interest" ? selectedMarkerIndex : undefined;
+    const selectedIndex = mode === "edit" ? selectedMarkerIndex : undefined;
     appRef.current.setWorldMarkers(input, preview, selectedIndex);
-  }, [markers, mode, placementRadius, placementIconIndex, selectedMarkerIndex, editTarget]);
+    if (pendingLabelMarkerIndexRef.current !== null) {
+      appRef.current.showWorldMarkerLabel(pendingLabelMarkerIndexRef.current);
+      pendingLabelMarkerIndexRef.current = null;
+    }
+  }, [markers, mode, placementRadius, placementIconIndex, selectedMarkerIndex]);
 
   const placeMarkerAtCurrentPreview = useCallback(() => {
     if (!appRef.current) return;
@@ -270,19 +376,35 @@ export default function Editor() {
     const iconUrl = MARKER_ICON_OPTIONS[placementIconIndex]?.value ?? MARKER_ICON_OPTIONS[0].value;
     const newMarker: EditorMarker = {
       position: [pos.x, pos.y, pos.z],
+      viewPosition:
+        placementViewPosition ??
+        getCurrentCameraPosition() ??
+        deriveViewPosition([pos.x, pos.y, pos.z]),
       radius: placementRadius,
-      label: ["New marker", ""],
+      label: [placementTitle, placementDescription],
       icon: iconUrl,
     };
-    setMarkers((prev) => [...prev, newMarker]);
-  }, [placementIconIndex, placementRadius]);
+    setMarkers((prev) => {
+      setSelectedMarkerIndex(prev.length);
+      return [...prev, newMarker];
+    });
+    setPlacementTitle("");
+    setPlacementDescription("");
+    setPlacementViewPosition(null);
+  }, [
+    getCurrentCameraPosition,
+    placementDescription,
+    placementIconIndex,
+    placementRadius,
+    placementTitle,
+    placementViewPosition,
+  ]);
 
   useEffect(() => {
     if (!wrapRef.current) return;
-    const app = new ThreeApp(wrapRef.current, { defaultControlMode });
+    const app = new ThreeApp(wrapRef.current, { defaultControlMode, sidebarUi: true });
     appRef.current = app;
-    app.setWorldAxesPosition(axisStartPos ?? [0, 0, 0]);
-
+    setMarkerListHost(app.getViewerAddonHost());
     const pathFromUrl = gaussianPathParam;
     const markersParam = searchParams.get("markers");
     if (pathFromUrl) {
@@ -297,7 +419,9 @@ export default function Editor() {
     if (!isFieldManagement && markersParam) {
       try {
         const parsed = JSON.parse(markersParam) as Array<Record<string, unknown>>;
-        setMarkers(parseApiMarkers(parsed));
+        const nextMarkers = parseApiMarkers(parsed, getCurrentCameraPosition());
+        setMarkers(nextMarkers);
+        setSavedMarkers(cloneEditorMarkers(nextMarkers));
       } catch {
         // ignore
       }
@@ -306,15 +430,17 @@ export default function Editor() {
       const singleMarker = parseMarkerFormParam(markerParam);
       if (singleMarker) {
         setMarkers([singleMarker]);
+        setSavedMarkers(cloneEditorMarkers([singleMarker]));
         setSelectedMarkerIndex(null);
       }
     }
 
     return () => {
+      setMarkerListHost(null);
       app.dispose();
       appRef.current = null;
     };
-  }, [searchParams, gaussianPathParam, isFieldManagement, defaultControlMode]);
+  }, [searchParams, gaussianPathParam, getCurrentCameraPosition, isFieldManagement, defaultControlMode]);
 
   useEffect(() => {
     if (!isFieldManagement || !fieldId) {
@@ -322,6 +448,7 @@ export default function Editor() {
       setFieldStatus("idle");
       setFieldError("");
       setAxisStartPos(null);
+      setSavedMarkers([]);
       return;
     }
 
@@ -342,11 +469,11 @@ export default function Editor() {
         setFieldStatus("ready");
         setAxisStartPos(parseStartPos(field.start_pos));
         const backendMarkers = Array.isArray(field.markers) ? (field.markers as MarkerPayload[]) : [];
-        const nextMarkers = backendMarkersToEditorMarkers(backendMarkers);
+        const nextMarkers = backendMarkersToEditorMarkers(backendMarkers, getCurrentCameraPosition());
         setMarkers(nextMarkers);
+        setSavedMarkers(cloneEditorMarkers(nextMarkers));
         const nextSelectedIndex = null;
         setSelectedMarkerIndex(nextSelectedIndex);
-        setEditTarget(nextSelectedIndex !== null ? "marker" : null);
         if (!gaussianPathParam) {
           const filePath = field.File?.trim();
           if (filePath) {
@@ -359,17 +486,17 @@ export default function Editor() {
             appRef.current?.loadGaussianScene(resolved);
           }
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (cancelled) return;
         setFieldStatus("error");
-        setFieldError(error?.message ? String(error.message) : String(error));
+        setFieldError(errorMessage(error));
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [fieldId, gaussianPathParam, isFieldManagement]);
+  }, [fieldId, gaussianPathParam, getCurrentCameraPosition, isFieldManagement]);
 
   useEffect(() => {
     setSaveStatus("idle");
@@ -387,6 +514,7 @@ export default function Editor() {
   useEffect(() => {
     if (selectedMarkerIndex === null || !markers[selectedMarkerIndex]) {
       setPositionDrafts(["0.00", "0.00", "0.00"]);
+      setViewPositionDrafts(["0.00", "0.00", "0.00"]);
       return;
     }
 
@@ -396,15 +524,12 @@ export default function Editor() {
       formatCoordinateForInput(selectedMarker.position[1]),
       formatCoordinateForInput(selectedMarker.position[2]),
     ]);
-  }, [selectedMarkerIndex]);
-
-  useEffect(() => {
-    if (mode === "edit" && prevModeRef.current !== "edit") {
-      setSelectedMarkerIndex(null);
-      setEditTarget(null);
-    }
-    prevModeRef.current = mode;
-  }, [mode]);
+    setViewPositionDrafts([
+      formatCoordinateForInput(selectedMarker.viewPosition[0]),
+      formatCoordinateForInput(selectedMarker.viewPosition[1]),
+      formatCoordinateForInput(selectedMarker.viewPosition[2]),
+    ]);
+  }, [markers, selectedMarkerIndex]);
 
   useEffect(() => {
     if (!appRef.current) return;
@@ -412,60 +537,60 @@ export default function Editor() {
 
     if (mode === "preview") {
       appRef.current.setPlacementDistance(0);
-      appRef.current.setEditorCallbacks({});
+      appRef.current.setEditorCallbacks({
+        onMarkerClick: (index) => {
+          const marker = markers[index];
+          if (!marker) return;
+          openMarker(marker, index);
+        },
+      });
       appRef.current.setMarkerEditing(null);
       appRef.current.setInterestPointEditing(false);
-      setEditTarget(null);
     } else if (mode === "place") {
       appRef.current.setPlacementDistance(placementDistance);
-      appRef.current.setEditorCallbacks({});
+      appRef.current.setEditorCallbacks({
+        onMarkerClick: (index) => {
+          const marker = markers[index];
+          if (!marker) return;
+          openMarker(marker, index);
+        },
+      });
       appRef.current.setMarkerEditing(null);
       appRef.current.setInterestPointEditing(false);
-      setEditTarget(null);
     } else if (mode === "edit") {
       appRef.current.setPlacementDistance(0);
       appRef.current.setEditorCallbacks({
         onMarkerClick: (index) => {
-          setSelectedMarkerIndex(index);
-          setEditTarget("marker");
-        },
-        onInterestPointClick: () => {
-          setEditTarget("interest");
+          const marker = markers[index];
+          if (marker) openMarker(marker, index);
         },
       });
-      if (editTarget === "interest") {
-        appRef.current.setMarkerEditing(null);
-        appRef.current.setInterestPointEditing(true, (position) => {
-          setAxisStartPos(position);
-        });
-      } else {
-        appRef.current.setMarkerEditing(
-          selectedMarkerIndex,
-          (position) => {
-            const roundedPosition = position.map((value) => roundCoordinate(value)) as [
-              number,
-              number,
-              number,
-            ];
-            if (selectedMarkerIndex === null) return;
-            setMarkers((prev) => {
-              const next = [...prev];
-              const marker = next[selectedMarkerIndex];
-              if (!marker) return prev;
-              next[selectedMarkerIndex] = { ...marker, position: roundedPosition };
-              return next;
-            });
-            setPositionDrafts(roundedPosition.map((value) => formatCoordinateForInput(value)) as [
-              string,
-              string,
-              string,
-            ]);
-          }
-        );
-        appRef.current.setInterestPointEditing(false);
-      }
+      appRef.current.setMarkerEditing(
+        selectedMarkerIndex,
+        (position) => {
+          const roundedPosition = position.map((value) => roundCoordinate(value)) as [
+            number,
+            number,
+            number,
+          ];
+          if (selectedMarkerIndex === null) return;
+          setMarkers((prev) => {
+            const next = [...prev];
+            const marker = next[selectedMarkerIndex];
+            if (!marker) return prev;
+            next[selectedMarkerIndex] = { ...marker, position: roundedPosition };
+            return next;
+          });
+          setPositionDrafts(roundedPosition.map((value) => formatCoordinateForInput(value)) as [
+            string,
+            string,
+            string,
+          ]);
+        }
+      );
+      appRef.current.setInterestPointEditing(false);
     }
-  }, [mode, placementDistance, selectedMarkerIndex, editTarget]);
+  }, [markers, mode, openMarker, placementDistance, selectedMarkerIndex]);
 
   useEffect(() => {
     const next = pins.length;
@@ -485,11 +610,12 @@ export default function Editor() {
           : pin.path
         : new URL(pin.path, window.location.href).href;
     setAxisStartPos(parseStartPos(pin.start_pos));
-    setMarkers(parseApiMarkers(pin.markers ?? []));
+    const nextMarkers = parseApiMarkers(pin.markers ?? [], getCurrentCameraPosition());
+    setMarkers(nextMarkers);
+    setSavedMarkers(cloneEditorMarkers(nextMarkers));
     setSelectedMarkerIndex(null);
-    setEditTarget(null);
     appRef.current?.loadGaussianScene(resolved);
-  }, [pins, selectedPinIndex, gaussianPathParam, isFieldManagement]);
+  }, [pins, selectedPinIndex, gaussianPathParam, getCurrentCameraPosition, isFieldManagement]);
 
   useEffect(() => {
     // awsClient
@@ -533,12 +659,13 @@ export default function Editor() {
       const refreshedField = await fetchFieldById(fieldId);
       const persistedStartPos = parseStartPos(refreshedField?.start_pos);
       const persistedMarkers = Array.isArray(refreshedField?.markers)
-        ? backendMarkersToEditorMarkers(refreshedField.markers as MarkerPayload[])
+        ? backendMarkersToEditorMarkers(refreshedField.markers as MarkerPayload[], getCurrentCameraPosition())
         : markerPayload.map((entry) => ({
             icon: entry[0],
             radius: entry[1],
             position: entry[2],
-            label: entry[3],
+            viewPosition: entry[3],
+            label: entry[4],
           }));
 
       if (refreshedField) {
@@ -546,15 +673,24 @@ export default function Editor() {
       }
       setAxisStartPos(persistedStartPos ?? nextStartPos);
       setMarkers(persistedMarkers);
+      setSavedMarkers(cloneEditorMarkers(persistedMarkers));
       setSaveStatus("success");
       setSaveMessage("Saved.");
-    } catch (error: any) {
+    } catch (error: unknown) {
       setSaveStatus("error");
-      setSaveMessage(error?.message ? String(error.message) : "Failed to save.");
+      setSaveMessage(errorMessage(error) || "Failed to save.");
     }
-  }, [fieldId, markers, axisStartPos]);
+  }, [fieldId, markers, axisStartPos, getCurrentCameraPosition]);
 
   const selectedMarker = selectedMarkerIndex !== null ? markers[selectedMarkerIndex] : null;
+  const hasUnsavedChanges = markerSnapshot(markers) !== markerSnapshot(savedMarkers);
+
+  const handleDiscardMarkers = () => {
+    setMarkers(cloneEditorMarkers(savedMarkers));
+    setSelectedMarkerIndex(null);
+    setSaveStatus("idle");
+    setSaveMessage("");
+  };
 
   const handlePositionDraftChange = (axisIndex: number, value: string) => {
     if (!isCoordinateDraft(value)) return;
@@ -603,422 +739,471 @@ export default function Editor() {
     commitPositionDraft(axisIndex);
   };
 
-  return (
-    <div className="threeWrap" style={{ display: "flex", flexDirection: "row" }}>
-      <div ref={wrapRef} style={{ flex: 1, position: "relative", minHeight: "100vh" }} />
+  const handleViewPositionDraftChange = (axisIndex: number, value: string) => {
+    if (!isCoordinateDraft(value)) return;
 
-      <aside
-        style={{
-          width: 280,
-          flexShrink: 0,
-          background: "rgba(26, 31, 46, 0.95)",
-          borderLeft: "1px solid rgba(255,255,255,0.1)",
-          padding: "1rem",
-          overflowY: "auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: "1rem",
-        }}
-      >    
-        {isFieldManagement ? (
-          <>
-            <h3 style={{ margin: 0, fontSize: "1rem", color: "#e6edf3" }}>Managing Field</h3>
-            <div
-              style={{
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: 8,
-                padding: "0.75rem",
-                background: "rgba(0,0,0,0.25)",
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.25rem",
-              }}
-            >
-              <strong style={{ color: "#fff", fontSize: "0.95rem" }}>
-                {managedField?.Name || "Untitled Field"}
-              </strong>
-              <span style={{ fontSize: "0.8rem", color: "#b8c2d1" }}>Field ID: {fieldId}</span>
-              <span style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>
-                Scene path: {gaussianPathParam || managedField?.File || "Use custom path"}
+    setViewPositionDrafts((prev) => {
+      const next = [...prev] as [string, string, string];
+      next[axisIndex] = value;
+      return next;
+    });
+  };
+
+  const commitViewPositionDraft = (axisIndex: number) => {
+    if (selectedMarkerIndex === null) return;
+
+    const parsedValue = toFiniteNumber(viewPositionDrafts[axisIndex]);
+    if (parsedValue === null) {
+      setViewPositionDrafts((prev) => {
+        const next = [...prev] as [string, string, string];
+        next[axisIndex] = formatCoordinateForInput(selectedMarker?.viewPosition[axisIndex]);
+        return next;
+      });
+      return;
+    }
+
+    const roundedValue = roundCoordinate(parsedValue);
+    setMarkers((prev) => {
+      const marker = prev[selectedMarkerIndex];
+      if (!marker) return prev;
+      const next = [...prev];
+      const viewPosition = [...marker.viewPosition] as [number, number, number];
+      viewPosition[axisIndex] = roundedValue;
+      next[selectedMarkerIndex] = { ...marker, viewPosition };
+      return next;
+    });
+    setViewPositionDrafts((prev) => {
+      const next = [...prev] as [string, string, string];
+      next[axisIndex] = formatCoordinateForInput(roundedValue);
+      return next;
+    });
+  };
+
+  const selectedMarkerLabel = normalizeMarkerLabel(selectedMarker?.label);
+  const selectedIconIndex = Math.max(
+    0,
+    MARKER_ICON_OPTIONS.findIndex((option) => option.value === (selectedMarker?.icon ?? ""))
+  );
+  const updateSelectedMarker = (update: (marker: EditorMarker) => EditorMarker) => {
+    if (selectedMarkerIndex === null) return;
+    setMarkers((prev) => {
+      const marker = prev[selectedMarkerIndex];
+      if (!marker) return prev;
+      const next = [...prev];
+      next[selectedMarkerIndex] = update(marker);
+      return next;
+    });
+  };
+
+  const handleSetPlacementViewPosition = () => {
+    const viewPosition = getCurrentCameraPosition();
+    if (!viewPosition) return;
+    setPlacementViewPosition(viewPosition);
+    notifyViewPositionSet();
+  };
+
+  return (
+    <div className="threeWrap markerEditorShell">
+      <div className="markerEditorViewer">
+        <div className="markerEditorCanvas" ref={wrapRef} />
+        {markerListHost &&
+          createPortal(
+            <aside className="viewerMarkerSidebar" aria-label="Scene markers">
+              <h2>Markers</h2>
+              <div className="viewerMarkerList">
+                {markers.map((marker, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    className={selectedMarkerIndex === index ? "active" : ""}
+                    onClick={() => openMarker(marker, index)}
+                  >
+                    {marker.icon && <img src={resolveAssetUrl(marker.icon)} alt="" />}
+                    <span>{normalizeMarkerLabel(marker.label)[0] || `Marker ${index + 1}`}</span>
+                  </button>
+                ))}
+              </div>
+            </aside>,
+            markerListHost
+          )}
+        {showViewPositionNotice && (
+          <div className="markerViewPositionNotice" role="status" aria-live="polite">
+            View Position Set
+          </div>
+        )}
+      </div>
+      <aside className="markerEditorSidebar">
+        <div className="markerEditorScroll">
+          <header className="markerEditorHeader">
+            <div className="markerEditorTitleRow">
+              <h1>Marker Editor</h1>
+              <span className={`markerDirtyFlag ${hasUnsavedChanges ? "isDirty" : ""}`}>
+                {hasUnsavedChanges ? "Unsaved changes" : "Saved"}
               </span>
             </div>
-          </>
-        ) : (
-          <>
-            <h3 style={{ margin: 0, fontSize: "1rem", color: "#e6edf3" }}>Scene</h3>
-            {pins.length > 0 && (
-              <select
-                value={selectedPinIndex}
-                onChange={(e) => setSelectedPinIndex(Number(e.target.value))}
-                style={{
-                  width: "100%",
-                  padding: "0.5rem 0.75rem",
-                  borderRadius: 6,
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  background: "rgba(0,0,0,0.3)",
-                  color: "#e6edf3",
-                  fontSize: "0.875rem",
-                }}
-              >
-                {pins.map((pin, i) => (
-                  <option key={i} value={i}>
-                    {pin.title || `Location ${i + 1}`}
+
+            <div className="markerFieldCard">
+              {isFieldManagement ? (
+                <>
+                  <strong>{managedField?.Name || "Untitled Field"}</strong>
+                  <span>FieldID: {fieldId}</span>
+                  <span>Scene: {gaussianPathParam || managedField?.File || "No scene path"}</span>
+                </>
+              ) : (
+                <>
+                  <strong>Scene Preview</strong>
+                  {pins.length > 0 && (
+                    <select value={selectedPinIndex} onChange={(e) => setSelectedPinIndex(Number(e.target.value))}>
+                      {pins.map((pin, i) => (
+                        <option key={i} value={i}>
+                          {pin.title || `Location ${i + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <span>Open a field from Admin to persist marker changes.</span>
+                </>
+              )}
+            </div>
+          </header>
+
+          <section className="markerEditorSection">
+            <h2>Mode</h2>
+            <div className="markerModeTabs" role="tablist" aria-label="Marker editor mode">
+              {([
+                ["preview", "Preview"],
+                ["place", "Place"],
+                ["edit", "Edit"],
+              ] as const).map(([nextMode, label]) => (
+                <button
+                  key={nextMode}
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === nextMode}
+                  className={mode === nextMode ? "active" : ""}
+                  onClick={() => setMode(nextMode)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {mode === "preview" && (
+            <section className="markerEditorSection">
+              <div className="markerSectionTitle">
+                <h2>Markers</h2>
+                <span>{markers.length}</span>
+              </div>
+              <p className="markerEditorHint">
+                Inspect local markers before saving. Select a marker to keep it ready for Edit mode.
+              </p>
+              <div className="markerList">
+                {markers.length === 0 && <p className="markerEmptyState">No markers in this scene.</p>}
+                {markers.map((marker, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    className={selectedMarkerIndex === index ? "active" : ""}
+                    onClick={() => openMarker(marker, index)}
+                  >
+                    <span>{normalizeMarkerLabel(marker.label)[0] || "Untitled marker"}</span>
+                    <small>
+                      {marker.position.map((value) => formatCoordinateForInput(value)).join(", ")}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {mode === "place" && (
+            <section className="markerEditorSection markerForm">
+              <h2>Place Mode</h2>
+              <p className="markerEditorHint">
+                Fly to the target area, tune the placement preview, and place a marker locally.
+              </p>
+              <label>
+                <span>Placement Distance</span>
+                <output>{placementDistance.toFixed(1)} m</output>
+              </label>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                step={0.5}
+                value={placementDistance}
+                onChange={(e) => setPlacementDistance(Number(e.target.value))}
+              />
+              <label>
+                <span>Icon</span>
+              </label>
+              <select value={placementIconIndex} onChange={(e) => setPlacementIconIndex(Number(e.target.value))}>
+                {MARKER_ICON_OPTIONS.map((option, index) => (
+                  <option key={option.value} value={index}>
+                    {option.label}
                   </option>
                 ))}
               </select>
-            )}
-          </>
-        )}
-
-        <h3 style={{ margin: 0, fontSize: "1rem", color: "#e6edf3" }}>Mode</h3>
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          {([
-            ["preview", "Preview"],
-            ["place", "Place"],
-            ["edit", "Edit"],
-          ] as const).map(([m, label]) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              style={{
-                padding: "0.4rem 0.75rem",
-                borderRadius: 6,
-                border: "1px solid rgba(255,255,255,0.2)",
-                background: mode === m ? "rgba(59, 130, 246, 0.4)" : "rgba(255,255,255,0.06)",
-                color: "#e6edf3",
-                fontSize: "0.8rem",
-                textTransform: "capitalize",
-                cursor: "pointer",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {mode === "place" && (
-          <>
-          <div>
-            <label style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>
-              Placement distance: {placementDistance.toFixed(1)}m
-            </label>
-            <input
-              type="range"
-              min={1}
-              max={10}
-              step={0.5}
-              value={placementDistance}
-              onChange={(e) => setPlacementDistance(Number(e.target.value))}
-              style={{ width: "100%", marginTop: "0.25rem" }}
-            />
-          </div>
-          <div>
-            <h3 style={{ margin: 0, fontSize: "0.9rem", color: "#e6edf3" }}>Preview style</h3>
-            <label style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>Icon</label>
-            <select
-              value={placementIconIndex}
-              onChange={(e) => setPlacementIconIndex(Number(e.target.value))}
-              style={{
-                width: "100%",
-                padding: "0.4rem 0.6rem",
-                marginTop: "0.25rem",
-                borderRadius: 6,
-                border: "1px solid rgba(255,255,255,0.2)",
-                background: "rgba(0,0,0,0.3)",
-                color: "#e6edf3",
-                fontSize: "0.875rem",
-              }}
-            >
-              {MARKER_ICON_OPTIONS.map((opt, i) => (
-                <option key={i} value={i}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <label style={{ display: "block", fontSize: "0.8rem", color: "#9aa4b5", marginTop: "0.5rem" }}>
-              Radius: {placementRadius.toFixed(2)}
-            </label>
-            <input
-              type="range"
-              min={0.01}
-              max={1}
-              step={0.01}
-              value={placementRadius}
-              onChange={(e) => setPlacementRadius(Number(e.target.value))}
-              style={{ width: "100%", marginTop: "0.25rem" }}
-            />
-          </div>
-          </>
-        )}
-
-        {mode === "edit" && (
-          <div
-            style={{
-              padding: "0.75rem",
-              borderRadius: 8,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.04)",
-              color: "#b8c2d1",
-              fontSize: "0.82rem",
-              lineHeight: 1.5,
-            }}
-          >
-            Click a marker to move that marker, or click the interest-point axis to move the interest point.
-          </div>
-        )}
-
-        <h3 style={{ margin: 0, fontSize: "1rem", color: "#e6edf3" }}>Markers ({markers.length})</h3>
-        <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-          {markers.map((m, i) => (
-            <li key={i}>
-              <button
-                onClick={() => mode === "edit" && setSelectedMarkerIndex(i)}
-                style={{
-                  width: "100%",
-                  padding: "0.4rem 0.6rem",
-                  borderRadius: 4,
-                  border: "1px solid transparent",
-                  background: selectedMarkerIndex === i ? "rgba(59, 130, 246, 0.3)" : "rgba(255,255,255,0.04)",
-                  color: selectedMarkerIndex === i ? "#fff" : "#b8c2d1",
-                  fontSize: "0.8rem",
-                  textAlign: "left",
-                  cursor: mode === "edit" ? "pointer" : "default",
-                }}
-              >
-                {m.label?.[0] || `Marker ${i + 1}`}
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        {mode === "edit" && selectedMarker && selectedMarkerIndex !== null && (
-          <div>
-            <h3 style={{ margin: 0, fontSize: "1rem", color: "#e6edf3" }}>Edit marker</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
-              <div>
-                <label style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>Title</label>
+              <label>
+                <span>Icon Radius</span>
+                <output>{placementRadius.toFixed(2)}</output>
+              </label>
+              <div className="markerRangeRow">
                 <input
-                  type="text"
-                  value={selectedMarker.label?.[0] ?? ""}
-                  onChange={(e) =>
-                    setMarkers((prev) => {
-                      const next = [...prev];
-                      const [, description] = normalizeMarkerLabel(next[selectedMarkerIndex]?.label);
-                      next[selectedMarkerIndex] = {
-                        ...next[selectedMarkerIndex],
-                        label: [e.target.value, description],
-                      };
-                      return next;
-                    })
-                  }
-                  style={{
-                    width: "100%",
-                    padding: "0.4rem 0.6rem",
-                    marginTop: "0.25rem",
-                    borderRadius: 6,
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    background: "rgba(0,0,0,0.3)",
-                    color: "#e6edf3",
-                    fontSize: "0.875rem",
-                  }}
+                  type="range"
+                  min={0.01}
+                  max={1}
+                  step={0.01}
+                  value={placementRadius}
+                  onChange={(e) => setPlacementRadius(Number(e.target.value))}
+                />
+                <input
+                  type="number"
+                  min={0.01}
+                  max={1}
+                  step={0.01}
+                  value={placementRadius}
+                  onChange={(e) => setPlacementRadius(Number(e.target.value))}
                 />
               </div>
-              <div>
-                <label style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>Description</label>
-                <textarea
-                  value={selectedMarker.label?.[1] ?? ""}
-                  onChange={(e) =>
-                    setMarkers((prev) => {
-                      const next = [...prev];
-                      const [title] = normalizeMarkerLabel(next[selectedMarkerIndex]?.label);
-                      next[selectedMarkerIndex] = {
-                        ...next[selectedMarkerIndex],
-                        label: [title, e.target.value],
-                      };
-                      return next;
-                    })
-                  }
-                  style={{
-                    width: "100%",
-                    minHeight: 72,
-                    padding: "0.4rem 0.6rem",
-                    marginTop: "0.25rem",
-                    borderRadius: 6,
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    background: "rgba(0,0,0,0.3)",
-                    color: "#e6edf3",
-                    fontSize: "0.875rem",
-                    resize: "vertical",
-                  }}
-                />
+              <label>
+                <span>Title</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Enter title..."
+                value={placementTitle}
+                onChange={(e) => setPlacementTitle(e.target.value)}
+              />
+              <label>
+                <span>Description</span>
+              </label>
+              <textarea
+                placeholder="Enter description..."
+                value={placementDescription}
+                onChange={(e) => setPlacementDescription(e.target.value)}
+              />
+              <div className="markerEditorCallout">
+                The marker will use the preview position and the captured camera view.
               </div>
-              <div>
-                <label style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>Icon</label>
+              <button
+                type="button"
+                className="markerSubtleButton"
+                onClick={handleSetPlacementViewPosition}
+              >
+                Set View Position
+              </button>
+              {placementViewPosition && (
+                <small className="markerViewCaptured">View position captured from the current camera.</small>
+              )}
+              <button type="button" className="markerPrimaryButton" onClick={placeMarkerAtCurrentPreview}>
+                Place Marker
+              </button>
+            </section>
+          )}
+
+          {mode === "edit" && (
+            <>
+              <section className="markerEditorSection markerForm">
+                <h2>Select Marker</h2>
                 <select
-                  value={Math.max(
-                    0,
-                    MARKER_ICON_OPTIONS.findIndex((o) => o.value === (selectedMarker.icon ?? ""))
-                  )}
-                  onChange={(e) => {
-                    const i = Number(e.target.value);
-                    const icon = MARKER_ICON_OPTIONS[i]?.value ?? "";
-                    setMarkers((prev) => {
-                      const next = [...prev];
-                      next[selectedMarkerIndex] = { ...next[selectedMarkerIndex], icon: icon || undefined };
-                      return next;
-                    });
-                  }}
-                  style={{
-                    width: "100%",
-                    padding: "0.4rem 0.6rem",
-                    marginTop: "0.25rem",
-                    borderRadius: 6,
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    background: "rgba(0,0,0,0.3)",
-                    color: "#e6edf3",
-                    fontSize: "0.875rem",
-                  }}
+                  value={selectedMarkerIndex ?? ""}
+                  onChange={(e) => setSelectedMarkerIndex(e.target.value ? Number(e.target.value) : null)}
                 >
-                  {MARKER_ICON_OPTIONS.map((opt, i) => (
-                    <option key={i} value={i}>
-                      {opt.label}
+                  <option value="">Select a marker</option>
+                  {markers.map((marker, index) => (
+                    <option key={index} value={index}>
+                      {normalizeMarkerLabel(marker.label)[0] || "Untitled marker"}
                     </option>
                   ))}
                 </select>
-              </div>
-              <div>
-                <label style={{ fontSize: "0.8rem", color: "#9aa4b5" }}>Radius (size)</label>
-                <input
-                  type="number"
-                  step={0.01}
-                  min={0.01}
-                  max={1}
-                  value={selectedMarker.radius ?? 0.25}
-                  onChange={(e) =>
-                    setMarkers((prev) => {
-                      const next = [...prev];
-                      next[selectedMarkerIndex] = { ...next[selectedMarkerIndex], radius: Number(e.target.value) };
-                      return next;
-                    })
-                  }
-                  style={{
-                    width: "100%",
-                    padding: "0.4rem 0.6rem",
-                    marginTop: "0.25rem",
-                    borderRadius: 6,
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    background: "rgba(0,0,0,0.3)",
-                    color: "#e6edf3",
-                    fontSize: "0.875rem",
+                <button
+                  type="button"
+                  className="markerSubtleButton"
+                  onClick={() => {
+                    setPlacementTitle("");
+                    setPlacementDescription("");
+                    setMode("place");
                   }}
-                />
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.25rem" }}>
-                {(["x", "y", "z"] as const).map((axis, i) => (
-                  <div key={axis}>
-                    <label style={{ fontSize: "0.75rem", color: "#9aa4b5" }}>{axis.toUpperCase()}</label>
+                >
+                  + New Marker
+                </button>
+              </section>
+
+              <section className="markerEditorSection markerForm">
+                <h2>Marker Properties</h2>
+                {!selectedMarker && <p className="markerEmptyState">Select a marker to edit its properties.</p>}
+                {selectedMarker && (
+                  <>
+                    <label>
+                      <span>Icon</span>
+                    </label>
+                    <select
+                      value={selectedIconIndex}
+                      onChange={(e) => {
+                        const icon = MARKER_ICON_OPTIONS[Number(e.target.value)]?.value;
+                        updateSelectedMarker((marker) => ({ ...marker, icon }));
+                      }}
+                    >
+                      {MARKER_ICON_OPTIONS.map((option, index) => (
+                        <option key={option.value} value={index}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <label>
+                      <span>Icon Radius</span>
+                      <output>{(selectedMarker.radius ?? 0.25).toFixed(2)}</output>
+                    </label>
+                    <div className="markerRangeRow">
+                      <input
+                        type="range"
+                        min={0.01}
+                        max={1}
+                        step={0.01}
+                        value={selectedMarker.radius ?? 0.25}
+                        onChange={(e) =>
+                          updateSelectedMarker((marker) => ({ ...marker, radius: Number(e.target.value) }))
+                        }
+                      />
+                      <input
+                        type="number"
+                        min={0.01}
+                        max={1}
+                        step={0.01}
+                        value={selectedMarker.radius ?? 0.25}
+                        onChange={(e) =>
+                          updateSelectedMarker((marker) => ({ ...marker, radius: Number(e.target.value) }))
+                        }
+                      />
+                    </div>
+                    <label>
+                      <span>Title</span>
+                    </label>
                     <input
                       type="text"
-                      inputMode="decimal"
-                      value={positionDrafts[i]}
-                      onChange={(e) => handlePositionDraftChange(i, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          commitPositionDraft(i);
-                          e.currentTarget.blur();
+                      value={selectedMarkerLabel[0]}
+                      onChange={(e) =>
+                        updateSelectedMarker((marker) => ({
+                          ...marker,
+                          label: [e.target.value, normalizeMarkerLabel(marker.label)[1]],
+                        }))
+                      }
+                    />
+                    <label>
+                      <span>Description</span>
+                    </label>
+                    <textarea
+                      value={selectedMarkerLabel[1]}
+                      onChange={(e) =>
+                        updateSelectedMarker((marker) => ({
+                          ...marker,
+                          label: [normalizeMarkerLabel(marker.label)[0], e.target.value],
+                        }))
+                      }
+                    />
+                    <label>
+                      <span>Position (World)</span>
+                    </label>
+                    <div className="markerPositionGrid">
+                      {(["x", "y", "z"] as const).map((axis, index) => (
+                        <label key={axis}>
+                          <span>{axis.toUpperCase()}</span>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step={0.01}
+                            value={positionDrafts[index]}
+                            onChange={(e) => handlePositionDraftChange(index, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                commitPositionDraft(index);
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            onBlur={() => handlePositionDraftBlur(index)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <label>
+                      <span>View Position (Camera)</span>
+                    </label>
+                    <div className="markerPositionGrid">
+                      {(["x", "y", "z"] as const).map((axis, index) => (
+                        <label key={axis}>
+                          <span>{axis.toUpperCase()}</span>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step={0.01}
+                            value={viewPositionDrafts[index]}
+                            onChange={(e) => handleViewPositionDraftChange(index, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                commitViewPositionDraft(index);
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            onBlur={() => commitViewPositionDraft(index)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="markerSubtleButton"
+                      onClick={() => {
+                        const viewPosition = getCurrentCameraPosition();
+                        if (viewPosition) {
+                          updateSelectedMarker((marker) => ({ ...marker, viewPosition }));
+                          notifyViewPositionSet();
                         }
                       }}
-                      onBlur={() => handlePositionDraftBlur(i)}
-                      style={{
-                        width: "100%",
-                        padding: "0.35rem 0.4rem",
-                        marginTop: "0.2rem",
-                        borderRadius: 6,
-                        border: "1px solid rgba(255,255,255,0.2)",
-                        background: "rgba(0,0,0,0.3)",
-                        color: "#e6edf3",
-                        fontSize: "0.8rem",
+                    >
+                      Set View Position
+                    </button>
+                    <button
+                      type="button"
+                      className="markerDangerButton"
+                      onClick={() => {
+                        setMarkers((prev) => prev.filter((_, index) => index !== selectedMarkerIndex));
+                        setSelectedMarkerIndex(null);
                       }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setMarkers((prev) => prev.filter((_, i) => i !== selectedMarkerIndex));
-                setSelectedMarkerIndex(null);
-              }}
-              style={{
-                marginTop: "0.75rem",
-                padding: "0.4rem 0.75rem",
-                borderRadius: 6,
-                border: "1px solid rgba(239, 68, 68, 0.5)",
-                background: "rgba(239, 68, 68, 0.2)",
-                color: "#fca5a5",
-                fontSize: "0.85rem",
-                cursor: "pointer",
-                width: "100%",
-              }}
-            >
-              Delete
-            </button>
-          </div>
-        )}
+                    >
+                      Delete Marker
+                    </button>
+                  </>
+                )}
+              </section>
+            </>
+          )}
 
-        {isFieldManagement && (
-          <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {mode === "place" && (
-              <button
-                type="button"
-                onClick={placeMarkerAtCurrentPreview}
-                style={{
-                  padding: "0.5rem 0.75rem",
-                  borderRadius: 6,
-                  border: "1px solid rgba(59,130,246,0.5)",
-                  background: "rgba(59,130,246,0.2)",
-                  color: "#bfdbfe",
-                  fontSize: "0.9rem",
-                  cursor: "pointer",
-                }}
-              >
-                Place Marker
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleSaveMarkers}
-              disabled={fieldStatus !== "ready" || saveStatus === "saving"}
-              style={{
-                padding: "0.55rem 0.75rem",
-                borderRadius: 6,
-                border: "1px solid rgba(34,197,94,0.6)",
-                background:
-                  fieldStatus !== "ready" || saveStatus === "saving"
-                    ? "rgba(34,197,94,0.15)"
-                    : "rgba(34,197,94,0.3)",
-                color: "#bbf7d0",
-                fontSize: "0.95rem",
-                cursor: fieldStatus !== "ready" || saveStatus === "saving" ? "not-allowed" : "pointer",
-              }}
-            >
-              {saveStatus === "saving" ? "Saving..." : "Save"}
-            </button>
-            {fieldStatus === "loading" && (
-              <span style={{ fontSize: "0.8rem", color: "#b8c2d1" }}>Loading field markers...</span>
-            )}
-            {fieldStatus === "error" && (
-              <span style={{ fontSize: "0.8rem", color: "#fca5a5" }}>{fieldError || "Unable to load field."}</span>
-            )}
-            {saveStatus === "success" && (
-              <span style={{ fontSize: "0.8rem", color: "#86efac" }}>{saveMessage || "Saved."}</span>
-            )}
-            {saveStatus === "error" && (
-              <span style={{ fontSize: "0.8rem", color: "#fca5a5" }}>{saveMessage || "Failed to save."}</span>
-            )}
-          </div>
-        )}
+          {(fieldStatus === "loading" || fieldStatus === "error" || saveStatus !== "idle") && (
+            <section className="markerEditorStatus" aria-live="polite">
+              {fieldStatus === "loading" && <span>Loading field markers...</span>}
+              {fieldStatus === "error" && <span className="error">{fieldError || "Unable to load field."}</span>}
+              {saveStatus === "success" && <span className="success">{saveMessage || "Saved."}</span>}
+              {saveStatus === "error" && <span className="error">{saveMessage || "Failed to save."}</span>}
+            </section>
+          )}
+        </div>
+
+        <footer className="markerEditorActions">
+          <span>{markers.length} markers</span>
+          <button type="button" onClick={handleDiscardMarkers} disabled={!hasUnsavedChanges || saveStatus === "saving"}>
+            Discard Changes
+          </button>
+          <button
+            type="button"
+            className="save"
+            onClick={handleSaveMarkers}
+            disabled={!isFieldManagement || fieldStatus !== "ready" || !hasUnsavedChanges || saveStatus === "saving"}
+          >
+            {saveStatus === "saving" ? "Saving..." : "Save Changes"}
+          </button>
+        </footer>
       </aside>
     </div>
   );

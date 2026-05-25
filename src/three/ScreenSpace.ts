@@ -29,8 +29,10 @@ export const PERFORMANCE_PRESETS: Record<PerformancePreset, PerformanceSettings>
 
 export class ScreenSpaceUI {
   private container: HTMLElement;
+  private readonly sidebarUi: boolean;
   private root: HTMLDivElement;
   private topStack: HTMLDivElement;
+  private viewerAddonHost: HTMLDivElement;
   private bottomRow: HTMLDivElement;
   private technicalWrap: HTMLDivElement;
   private positionLabel: HTMLDivElement;
@@ -72,8 +74,9 @@ export class ScreenSpaceUI {
   private mobileOrbitTool: MobileOrbitTool = "rotate";
   private mobilePlaceVisible = false;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, sidebarUi = false) {
     this.container = container;
+    this.sidebarUi = sidebarUi;
     console.log("ScreenSpaceUI created");
     // Make sure the container can host absolutely positioned children
     const style = getComputedStyle(container);
@@ -102,6 +105,17 @@ export class ScreenSpaceUI {
       gap: "4px",
       alignItems: "flex-start",
     });
+    if (this.sidebarUi) {
+      this.topStack.className = "viewerSidebarPanel";
+    }
+
+    this.viewerAddonHost = document.createElement("div");
+    Object.assign(this.viewerAddonHost.style, {
+      pointerEvents: "auto",
+    });
+    if (this.sidebarUi) {
+      this.viewerAddonHost.className = "viewerSidebarAddonHost";
+    }
 
     this.bottomRow = document.createElement("div");
     Object.assign(this.bottomRow.style, {
@@ -124,6 +138,9 @@ export class ScreenSpaceUI {
       borderRadius: "4px",
       pointerEvents: "auto",
     });
+    if (this.sidebarUi) {
+      this.controlModeWrap.className = "viewerSidebarControlRow";
+    }
 
     const modeLabel = document.createElement("span");
     modeLabel.textContent = "Controls";
@@ -158,6 +175,9 @@ export class ScreenSpaceUI {
       borderRadius: "4px",
       pointerEvents: "auto",
     });
+    if (this.sidebarUi) {
+      this.perfWrap.className = "viewerSidebarControlRow";
+    }
 
     const perfLabel = document.createElement("span");
     perfLabel.textContent = "Quality";
@@ -238,6 +258,9 @@ export class ScreenSpaceUI {
       borderRadius: "4px",
       pointerEvents: "auto",
     });
+    if (this.sidebarUi) {
+      this.speedWrap.className = "viewerSidebarControlRow";
+    }
 
     const speedLabel = document.createElement("span");
     speedLabel.textContent = "Speed";
@@ -276,6 +299,9 @@ export class ScreenSpaceUI {
       marginTop: "2px",
       pointerEvents: "auto",
     });
+    if (this.sidebarUi) {
+      this.controlsHint.className = "viewerSidebarInstructions";
+    }
     this.controlsHint.textContent =
       "Controls\n" +
       "LMB drag: look around\n" +
@@ -293,7 +319,11 @@ export class ScreenSpaceUI {
       color: "rgba(255, 255, 255, 0.92)",
       pointerEvents: "auto",
     });
-    this.applyHoverSurface(this.technicalWrap, "6px");
+    if (this.sidebarUi) {
+      this.technicalWrap.className = "viewerSidebarTechnical";
+    } else {
+      this.applyHoverSurface(this.technicalWrap, "6px");
+    }
     this.technicalWrap.appendChild(this.positionLabel);
     this.technicalWrap.appendChild(this.fpsLabel);
     this.technicalWrap.appendChild(this.clientTypeLabel);
@@ -442,7 +472,12 @@ export class ScreenSpaceUI {
     this.topStack.appendChild(this.perfWrap);
     this.topStack.appendChild(this.speedWrap);
     this.topStack.appendChild(this.controlsHint);
-    this.bottomRow.appendChild(this.technicalWrap);
+    this.topStack.appendChild(this.viewerAddonHost);
+    if (this.sidebarUi) {
+      this.topStack.appendChild(this.technicalWrap);
+    } else {
+      this.bottomRow.appendChild(this.technicalWrap);
+    }
 
     this.root.appendChild(this.mobileTopBar);
     this.root.appendChild(this.topStack);
@@ -479,6 +514,10 @@ export class ScreenSpaceUI {
     this.mobilePlaceTitle.textContent = title;
     this.mobilePlaceLocation.textContent = location;
     this.mobilePlaceDescription.textContent = description;
+  }
+
+  public getViewerAddonHost(): HTMLDivElement {
+    return this.viewerAddonHost;
   }
 
   public setSpeed(value: number) {
@@ -742,7 +781,7 @@ export class ScreenSpaceUI {
       mobile && this.mobilePlaceVisible ? "block" : "none";
     this.mobileToolbar.style.display = mobile ? "flex" : "none";
     this.topStack.style.display = mobile ? "none" : "flex";
-    this.bottomRow.style.display = mobile ? "none" : "flex";
+    this.bottomRow.style.display = mobile || this.sidebarUi ? "none" : "flex";
     this.mobileBackBtn.style.visibility = this.onMobileBack ? "visible" : "hidden";
     this.setMobileOrbitTool(this.mobileOrbitTool);
   }

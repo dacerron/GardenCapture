@@ -179,7 +179,7 @@ export default function Admin() {
     try {
       const data = await listFields();
       setItems(data.items as FieldItem[]);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setErr(String(e));
     } finally {
       setBusy(false);
@@ -190,7 +190,6 @@ export default function Admin() {
   useEffect(() => {
     if (authState !== "authed") return;
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState]);
 
   useEffect(() => {
@@ -243,7 +242,7 @@ export default function Admin() {
       setItems((prev) => [out.item as FieldItem, ...prev]);
       resetForm();
       setIsModalOpen(false);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setErr(String(e));
     } finally {
       setBusy(false);
@@ -264,7 +263,7 @@ export default function Admin() {
       await updateField(fieldId, result.payload);
       await load();
       cancelEditing();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setErr(String(e));
     } finally {
       setBusy(false);
@@ -286,7 +285,7 @@ export default function Admin() {
       if (editingId === fieldId) {
         cancelEditing();
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       setErr(String(e));
     } finally {
       setBusy(false);
@@ -582,13 +581,21 @@ export default function Admin() {
                                     <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>Pos X</th>
                                     <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>Pos Y</th>
                                     <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>Pos Z</th>
+                                    <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>View X</th>
+                                    <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>View Y</th>
+                                    <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>View Z</th>
                                     <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>Title</th>
                                     <th style={{ textAlign: "left", borderBottom: "1px solid #444", padding: 4 }}>Description</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {markersArray.map((marker, idx) => {
-                                    const [title, description] = normalizeMarkerLabel(marker[3]);
+                                    const markerValues = marker as unknown[];
+                                    const isCurrentShape = markerValues.length >= 5;
+                                    const viewPosition = isCurrentShape ? marker[3] : undefined;
+                                    const [title, description] = normalizeMarkerLabel(
+                                      isCurrentShape ? marker[4] : markerValues[3]
+                                    );
                                     return (
                                       <tr key={`${it.FieldID}-marker-${idx}`} style={{ background: "#111" }}>
                                         <td style={{ borderBottom: "1px solid #222", padding: 4 }}>
@@ -606,6 +613,9 @@ export default function Admin() {
                                         <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[2]?.[0] ?? ""}</td>
                                         <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[2]?.[1] ?? ""}</td>
                                         <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{marker[2]?.[2] ?? ""}</td>
+                                        <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{viewPosition?.[0] ?? ""}</td>
+                                        <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{viewPosition?.[1] ?? ""}</td>
+                                        <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{viewPosition?.[2] ?? ""}</td>
                                         <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{title}</td>
                                         <td style={{ borderBottom: "1px solid #222", padding: 4 }}>{description}</td>
                                       </tr>

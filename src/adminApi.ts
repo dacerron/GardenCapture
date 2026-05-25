@@ -16,7 +16,13 @@ export type Field = {
   markers?: unknown;
 };
 
-export type MarkerPayload = [string, number, [number, number, number], MarkerLabel];
+export type MarkerPayload = [
+  string,
+  number,
+  [number, number, number],
+  [number, number, number],
+  MarkerLabel,
+];
 
 export type CreateFieldPayload = Field;
 
@@ -69,11 +75,11 @@ async function apiFetch<T>(
 }
 
 export async function listFields() {
-  return apiFetch<{ items: any[] }>("/admin/api/fields");
+  return apiFetch<{ items: unknown[] }>("/admin/api/fields");
 }
 
 export async function createField(payload: CreateFieldPayload) {
-  return apiFetch<{ item: any }>("/admin/api/fields", {
+  return apiFetch<{ item: unknown }>("/admin/api/fields", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -85,7 +91,7 @@ export async function createField(payload: CreateFieldPayload) {
  * so FieldID must be in the JSON body.
  */
 export async function updateField(fieldId: string, payload: UpdateFieldPayload) {
-  return apiFetch<{ item: any }>("/admin/api/fields", {
+  return apiFetch<{ item: unknown }>("/admin/api/fields", {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

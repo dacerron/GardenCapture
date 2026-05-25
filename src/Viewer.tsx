@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import * as THREE from "three";
 import { fetchFieldById, type Field, type ViewerMarkerPayload } from "./fieldApi";
@@ -34,6 +35,23 @@ const resolveAssetUrl = (raw: string) => {
   return new URL(`/${raw}`, window.location.origin).href;
 };
 
+type MarkerVector = [number, number, number];
+
+const toMarkerVector = (
+  position: ViewerMarkerPayload["position"] | undefined
+): MarkerVector | null => {
+  const x = position?.x;
+  const y = position?.y;
+  const z = position?.z;
+  if (![x, y, z].every((value) => typeof value === "number" && Number.isFinite(value))) {
+    return null;
+  }
+  return [x as number, y as number, z as number];
+};
+
+const getMarkerViewPosition = (marker: ViewerMarkerPayload, position: MarkerVector): MarkerVector =>
+  toMarkerVector(marker.viewPosition) ?? [position[0], position[1] + 2.5, position[2] + 5];
+
 const parseMarkerQueryParam = (raw: string | null): ViewerMarkerPayload[] => {
   if (!raw) return [];
   try {
@@ -47,6 +65,7 @@ const parseMarkerQueryParam = (raw: string | null): ViewerMarkerPayload[] => {
           icon: typeof value.icon === "string" ? value.icon : undefined,
           scale: typeof value.scale === "number" ? value.scale : undefined,
           position: value.position as ViewerMarkerPayload["position"],
+          viewPosition: value.viewPosition as ViewerMarkerPayload["viewPosition"],
           label: normalizeMarkerLabel(value.label ?? value.text),
         };
       })
@@ -125,8 +144,12 @@ type ViewerLoadState =
 
 export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onBack, embedded }: ViewerProps = {}) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const appRef = useRef<ThreeApp | null>(null);
   const [searchParams] = useSearchParams();
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [focusedMarkerIndex, setFocusedMarkerIndex] = useState<number | null>(null);
+  const [markerListHost, setMarkerListHost] = useState<HTMLDivElement | null>(null);
+  const [isMobileMarkerListOpen, setIsMobileMarkerListOpen] = useState(false);
   const [loadState, setLoadState] = useState<ViewerLoadState>({ status: "loading" });
 
   useEffect(() => {
@@ -234,7 +257,10 @@ export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onB
       onBack,
       sceneInfo: loadState.sceneInfo,
       sphericalHarmonicsDegree: loadState.sphericalHarmonicsDegree,
+      sidebarUi: true,
     });
+    appRef.current = app;
+    setMarkerListHost(app.getViewerAddonHost());
     const parsedStartPos = parseStartPos(loadState.startPos);
     console.log("[Viewer start_pos debug] resolved viewer start position", {
       gaussianPath: loadState.gaussianPath,
@@ -272,20 +298,17 @@ export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onB
       };
 
       const worldMarkers = loadState.markers
+        .filter((marker) => toMarkerVector(marker.position) !== null)
         .map((marker) => {
-          const pos = marker.position;
-          const x = pos?.x;
-          const y = pos?.y;
-          const z = pos?.z;
-          if (![x, y, z].every((v) => typeof v === "number" && Number.isFinite(v))) {
-            return null;
-          }
+          const position = toMarkerVector(marker.position);
+          if (!position) return null;
           const radius =
             typeof marker.scale === "number" && Number.isFinite(marker.scale)
               ? marker.scale
               : undefined;
           return {
-            position: [x, y, z] as [number, number, number],
+            position,
+            viewPosition: getMarkerViewPosition(marker, position),
             radius,
             texture: toTexture(marker.icon),
             label: normalizeMarkerLabel(marker.label),
@@ -293,15 +316,29 @@ export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onB
         })
         .filter(Boolean) as Array<{
           position: [number, number, number];
+          viewPosition: [number, number, number];
           radius?: number;
           texture?: THREE.Texture;
           label?: ReturnType<typeof normalizeMarkerLabel>;
         }>;
 
       app.setWorldMarkers(worldMarkers);
+      app.setEditorCallbacks({
+        onMarkerClick: (index) => {
+          const marker = worldMarkers[index];
+          if (!marker) return;
+          setFocusedMarkerIndex(index);
+          app.moveCameraToMarkerView(marker.position, marker.viewPosition);
+          app.showWorldMarkerLabel(index);
+        },
+      });
     }
 
-    return () => app.dispose();
+    return () => {
+      if (appRef.current === app) appRef.current = null;
+      setMarkerListHost(null);
+      app.dispose();
+    };
   }, [loadState, onBack]);
 
   useEffect(() => {
@@ -326,6 +363,38 @@ export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onB
       console.warn("Failed to toggle fullscreen", err);
     }
   };
+
+  const moveToMarker = (marker: ViewerMarkerPayload, index: number) => {
+    const position = toMarkerVector(marker.position);
+    if (!position || !appRef.current) return;
+    setFocusedMarkerIndex(index);
+    appRef.current.moveCameraToMarkerView(position, getMarkerViewPosition(marker, position));
+    appRef.current.showWorldMarkerLabel(index);
+  };
+
+  const navigableMarkers =
+    loadState.status === "ready"
+      ? loadState.markers.filter((marker) => toMarkerVector(marker.position) !== null)
+      : [];
+
+  const markerList = (
+    <>
+      <h2>Markers</h2>
+      <div className="viewerMarkerList">
+        {navigableMarkers.map((marker, index) => (
+          <button
+            key={index}
+            type="button"
+            className={focusedMarkerIndex === index ? "active" : ""}
+            onClick={() => moveToMarker(marker, index)}
+          >
+            {marker.icon && <img src={resolveAssetUrl(marker.icon)} alt="" />}
+            <span>{normalizeMarkerLabel(marker.label)[0] || `Marker ${index + 1}`}</span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
 
   const controlButtonStyle: React.CSSProperties = {
     padding: "0.58rem 0.9rem",
@@ -376,6 +445,39 @@ export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onB
 
   return (
     <div className={`threeWrap ${embedded ? "threeWrapEmbedded" : ""}`} ref={wrapRef}>
+      {navigableMarkers.length > 0 &&
+        markerListHost &&
+        createPortal(
+          <aside className="viewerMarkerSidebar" aria-label="Scene markers">
+            {markerList}
+          </aside>,
+          markerListHost
+        )}
+      {navigableMarkers.length > 0 && (
+        <>
+          <aside
+            id="mobile-marker-sidebar"
+            className={`viewerMarkerSidebar viewerMarkerSidebarMobile ${
+              isMobileMarkerListOpen ? "isOpen" : ""
+            }`}
+            aria-label="Scene markers"
+            aria-hidden={!isMobileMarkerListOpen}
+          >
+            {markerList}
+          </aside>
+          <button
+            type="button"
+            className={`viewerMarkerSidebarToggle ${isMobileMarkerListOpen ? "isOpen" : ""}`}
+            aria-controls="mobile-marker-sidebar"
+            aria-expanded={isMobileMarkerListOpen}
+            aria-label={isMobileMarkerListOpen ? "Close markers list" : "Open markers list"}
+            onClick={() => setIsMobileMarkerListOpen((open) => !open)}
+          >
+            <span>Markers</span>
+            {isMobileMarkerListOpen ? "\u2039" : "\u203a"}
+          </button>
+        </>
+      )}
       <div
         className="viewerDesktopControls"
         style={{

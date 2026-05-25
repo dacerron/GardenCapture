@@ -42,13 +42,7 @@ export class FlyControls {
     this.camera = camera;
     this.domElement = domElement;
 
-    // Initialize yaw/pitch from camera’s quaternion
-    const e = new THREE.Euler().setFromQuaternion(
-      this.camera.quaternion,
-      "YXZ"
-    );
-    this.pitch = e.x;
-    this.yaw = e.y;
+    this.syncFromCamera();
 
     // Input listeners
     window.addEventListener("keydown", this.onKeyDown);
@@ -114,6 +108,12 @@ export class FlyControls {
 
   setBounds(bounds: THREE.Box3 | null) {
     this.bounds = bounds ? bounds.clone() : null;
+  }
+
+  syncFromCamera() {
+    const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, "YXZ");
+    this.pitch = euler.x;
+    this.yaw = euler.y;
   }
 
   setEnabled(enabled: boolean) {
