@@ -1,6 +1,7 @@
 import { type CSSProperties, type FormEvent, Fragment, useEffect, useState } from "react";
 import { fetchAuthSession, signInWithRedirect } from "aws-amplify/auth";
 import { type CreateFieldPayload, type MarkerPayload, createField, deleteField, listFields, updateField } from "./adminApi";
+import { getCognitoSignOutRedirect } from "./auth";
 import { normalizeMarkerLabel } from "@soil/shared/types/markerLabel";
 
 type FieldItem = {
@@ -295,7 +296,7 @@ export default function Admin() {
   async function onLogout() {
     const domain = import.meta.env.VITE_COGNITO_DOMAIN as string | undefined;
     const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID as string | undefined;
-    const logoutUri = import.meta.env.VITE_COGNITO_REDIRECT_SIGN_OUT || window.location.origin;
+    const logoutUri = getCognitoSignOutRedirect();
 
     if (!domain || !clientId) {
       setErr("Cognito logout is not configured.");

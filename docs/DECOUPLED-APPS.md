@@ -138,12 +138,6 @@ Required environment variables:
 VITE_PUBLIC_API_URL
 ```
 
-Optional:
-
-```text
-VITE_ASSET_BASE_URL
-```
-
 Do not configure Cognito for the viewer app.
 
 ### Admin Amplify App
@@ -174,9 +168,23 @@ VITE_AWS_REGION
 VITE_COGNITO_USER_POOL_ID
 VITE_COGNITO_CLIENT_ID
 VITE_COGNITO_DOMAIN
+```
+
+Optional redirect overrides:
+
+```text
 VITE_COGNITO_REDIRECT_SIGN_IN
 VITE_COGNITO_REDIRECT_SIGN_OUT
 ```
+
+The admin app defaults these to the current app origin:
+
+```text
+sign in:  {origin}/admin
+sign out: {origin}/
+```
+
+Only set the redirect env vars if you need to override or add explicit redirect URLs. Values must be full `http://` or `https://` URLs; comma-separated lists are supported.
 
 ## AWS Notes
 
