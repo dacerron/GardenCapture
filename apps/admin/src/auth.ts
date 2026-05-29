@@ -24,7 +24,7 @@ function parseRedirectEnv(envName: string): string[] {
         }
         return url.href;
       } catch {
-        throw new Error(`${envName} must contain absolute URL values, for example http://localhost:5174/admin.`);
+        throw new Error(`${envName} must contain absolute URL values, for example http://localhost:5174/.`);
       }
     });
 }
@@ -35,7 +35,7 @@ function unique(values: string[]): string[] {
 
 function oauthRedirects(): { signIn: string[]; signOut: string[] } {
   const origin = window.location.origin;
-  const defaultSignIn = new URL("/admin", origin).href;
+  const defaultSignIn = new URL("/", origin).href;
   const defaultSignOut = new URL("/", origin).href;
 
   return {

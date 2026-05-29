@@ -8,10 +8,10 @@ import RequireAuth from "./RequireAuth";
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <BrowserRouter>
     <Routes>
-      <Route path="/" element={<Navigate to="/admin" replace />} />
-      <Route path="/admin" element={<Admin />} />
+      <Route path="/" element={<Admin />} />
+      <Route path="/admin" element={<Navigate to="/" replace />} />
       <Route path="/editor" element={<RequireAuth><Editor /></RequireAuth>} />
-      <Route path="*" element={<Navigate to="/admin" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   </BrowserRouter>
 );

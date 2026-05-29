@@ -45,7 +45,8 @@ Location: `apps/admin`
 
 Routes:
 
-- `/admin`
+- `/`
+- `/admin` redirects to `/`
 - `/editor`
 
 The admin app contains the Admin Panel, Editor, Amplify/Cognito setup, and authenticated admin API client.
@@ -180,7 +181,7 @@ VITE_COGNITO_REDIRECT_SIGN_OUT
 The admin app defaults these to the current app origin:
 
 ```text
-sign in:  {origin}/admin
+sign in:  {origin}/
 sign out: {origin}/
 ```
 

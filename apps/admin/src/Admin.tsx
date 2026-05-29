@@ -1,5 +1,5 @@
 import { type CSSProperties, type FormEvent, Fragment, useEffect, useState } from "react";
-import { fetchAuthSession, signInWithRedirect } from "aws-amplify/auth";
+import { fetchAuthSession, signInWithRedirect, signOut } from "aws-amplify/auth";
 import { type CreateFieldPayload, type MarkerPayload, createField, deleteField, listFields, updateField } from "./adminApi";
 import { getCognitoSignOutRedirect } from "./auth";
 import { normalizeMarkerLabel } from "@soil/shared/types/markerLabel";
@@ -294,18 +294,16 @@ export default function Admin() {
   }
 
   async function onLogout() {
-    const domain = import.meta.env.VITE_COGNITO_DOMAIN as string | undefined;
-    const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID as string | undefined;
-    const logoutUri = getCognitoSignOutRedirect();
-
-    if (!domain || !clientId) {
-      setErr("Cognito logout is not configured.");
-      return;
+    try {
+      await signOut({
+        global: false,
+        oauth: {
+          redirectUrl: getCognitoSignOutRedirect(),
+        },
+      });
+    } catch (e: unknown) {
+      setErr(String(e));
     }
-  
-    window.location.assign(
-      `https://${domain}/logout?client_id=${encodeURIComponent(clientId)}&logout_uri=${encodeURIComponent(logoutUri)}`
-    );
   }
 
   // While checking auth, render nothing (no flash)
