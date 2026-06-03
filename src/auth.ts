@@ -1,14 +1,19 @@
 import { Amplify } from "aws-amplify";
+import {
+  appOrigin,
+  cognitoClientId,
+  cognitoOAuthDomain,
+  cognitoUserPoolId,
+} from "./lib/env";
 
 /**
  * OAuth redirect URLs must match the page origin where sign-in runs, or Amplify
  * throws "The oauth flow needs to be initiated from the same origin".
- * Register every URL you use (localhost, Amplify preview URLs, custom domain) in
+ * Register every URL you use (localhost, CloudFront, custom domain) in
  * Cognito → App client → Hosted UI → Allowed callback / sign-out URLs.
  */
 function oauthRedirects(): { signIn: string[]; signOut: string[] } {
-  const origin = window.location.origin;
-  console.log("OAUTH SIGN OUT: " + origin);
+  const origin = appOrigin();
   return {
     signIn: [`${origin}/admin`],
     signOut: [`${origin}/`],
@@ -20,16 +25,15 @@ const { signIn, signOut } = oauthRedirects();
 Amplify.configure({
   Auth: {
     Cognito: {
-      userPoolClientId: "q7bro5cdr1ucb3g7c00d420q5",
-      userPoolId: "ca-central-1_VnLGRFo8k",
-
+      userPoolClientId: cognitoClientId(),
+      userPoolId: cognitoUserPoolId(),
       loginWith: {
         oauth: {
-          domain: "ca-central-1vnlgrfo8k.auth.ca-central-1.amazoncognito.com",
+          domain: cognitoOAuthDomain(),
           scopes: ["openid", "email"],
           redirectSignIn: signIn,
           redirectSignOut: signOut,
-          responseType: "code", // PKCE
+          responseType: "code",
         },
       },
     },

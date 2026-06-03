@@ -10,7 +10,16 @@ import {
 const ddb = DynamoDBDocumentClient.from(
   new DynamoDBClient({region: "ca-central-1"})
 );
-const TABLE = "eml_fields";
+const TABLE = process.env.FIELDS_TABLE_NAME || "eml_fields";
+
+function parsePinsFilterIds(raw) {
+  if (raw === undefined || raw === null) return [];
+  const trimmed = String(raw).trim();
+  if (trimmed === "" || trimmed === "*") return [];
+  return trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+const pinsFilterIds = parsePinsFilterIds(process.env.PINS_FIELD_IDS);
 
 const unwrapAttributeValue = (attr) => {
   if (attr === null || attr === undefined) return undefined;
@@ -102,8 +111,11 @@ const parseStartPos = (raw) => {
 
 async function getPins() {
   const data = await ddb.send(new ScanCommand({ TableName: TABLE }));
+  const filterSet = new Set(pinsFilterIds);
   return (data.Items || [])
-    .filter(i => ["TestA", "TestB", "TestC"].includes(String(i.FieldID)))
+    .filter((i) =>
+      filterSet.size === 0 ? true : filterSet.has(String(i.FieldID)),
+    )
     .map(i => ({
       title: i.Name,
       position: {
