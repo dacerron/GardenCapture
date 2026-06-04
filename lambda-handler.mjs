@@ -55,6 +55,17 @@ const toNumber = (value) => {
 const toStringValue = (value) =>
   typeof value === "string" ? value : undefined;
 
+const parseVector = (raw) => {
+  if (!Array.isArray(raw) || raw.length < 3) return null;
+  const coords = raw.slice(0, 3).map((value) => toNumber(value));
+  if (coords.some((val) => typeof val !== "number")) return null;
+  return {
+    x: coords[0],
+    y: coords[1],
+    z: coords[2]
+  };
+};
+
 const parseMarkers = (raw) => {
   const normalized = unwrapAttributeValue(raw);
   if (!Array.isArray(normalized)) return [];
@@ -62,24 +73,32 @@ const parseMarkers = (raw) => {
   return normalized
     .map((entry) => {
       if (!Array.isArray(entry) || entry.length < 4) return null;
-      const [iconRaw, scaleRaw, positionRaw, textRaw] = entry;
-      if (!Array.isArray(positionRaw) || positionRaw.length < 3) return null;
-
-      const coords = positionRaw
-        .slice(0, 3)
-        .map((value) => toNumber(value));
-      if (coords.some((val) => typeof val !== "number")) return null;
+      const [iconRaw, scaleRaw, positionRaw] = entry;
+      const position = parseVector(positionRaw);
+      if (!position) return null;
+      const isCurrentShape = entry.length >= 5;
+      const savedViewPosition = isCurrentShape ? parseVector(entry[3]) : null;
+      const viewPosition = savedViewPosition ?? {
+        x: position.x,
+        y: position.y + 2.5,
+        z: position.z + 5
+      };
+      const labelRaw = isCurrentShape ? entry[4] : entry[3];
+      const label = Array.isArray(labelRaw)
+        ? [
+            toStringValue(labelRaw[0]) ?? "",
+            toStringValue(labelRaw[1]) ?? ""
+          ]
+        : [toStringValue(labelRaw) ?? "", ""];
 
       const scale = toNumber(scaleRaw);
       return {
         icon: toStringValue(iconRaw) ?? "",
         scale: scale ?? undefined,
-        position: {
-          x: coords[0],
-          y: coords[1],
-          z: coords[2]
-        },
-        text: toStringValue(textRaw) ?? ""
+        position,
+        viewPosition,
+        label,
+        text: label[0]
       };
     })
     .filter(Boolean);
@@ -175,4 +194,3 @@ const json = (status, body) => ({
   headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
   body: JSON.stringify(body)
 });
-

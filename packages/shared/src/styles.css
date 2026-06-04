@@ -1,0 +1,772 @@
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+:root {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  color: #1f1f1f;
+  background: #5c7ea5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.viewerStatusShell,
+.viewerInstructionShell {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  background: #5c7ea5;
+}
+
+.viewerStatusCard,
+.viewerInstructionCard {
+  width: min(520px, 100%);
+  padding: 1.5rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #1f1f1f;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.24);
+}
+
+.viewerStatusCard h1,
+.viewerInstructionCard h1 {
+  margin: 0 0 0.65rem;
+  font-size: 1.45rem;
+}
+
+.viewerStatusCard p,
+.viewerInstructionCard p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.viewerInstructionCard code {
+  display: block;
+  margin: 1rem 0;
+  padding: 0.75rem;
+  border-radius: 6px;
+  background: #202634;
+  color: #f7f7f7;
+  overflow-x: auto;
+}
+
+.viewerInstructionExample {
+  font-size: 0.95rem;
+}
+
+.viewerInstructionExample a {
+  text-decoration: underline;
+}
+
+.threeWrap {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.threeWrapEmbedded {
+  height: 100%;
+}
+
+.viewerSidebarPanel {
+  width: min(290px, calc(100% - 5rem));
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 0.85rem;
+  border: 1px solid rgba(142, 164, 198, 0.25);
+  border-radius: 8px;
+  background: rgba(14, 22, 35, 0.9);
+  backdrop-filter: blur(7px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  color: #eef3fc;
+  overflow: hidden;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  gap: 0.65rem !important;
+}
+
+.viewerSidebarPanel .viewerSidebarControlRow,
+.viewerSidebarPanel .viewerSidebarInstructions,
+.viewerSidebarPanel .viewerSidebarTechnical {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid rgba(142, 164, 198, 0.15);
+  border-radius: 6px !important;
+  background: rgba(4, 8, 15, 0.36) !important;
+  color: #eef3fc;
+}
+
+.viewerSidebarPanel .viewerSidebarControlRow {
+  justify-content: space-between;
+  padding: 0.62rem 0.65rem !important;
+  gap: 0.55rem !important;
+}
+
+.viewerSidebarPanel .viewerSidebarControlRow button {
+  border-color: rgba(142, 164, 198, 0.27) !important;
+  border-radius: 5px !important;
+  padding: 0.26rem 0.48rem !important;
+}
+
+.viewerSidebarPanel .viewerSidebarControlRow select {
+  border: 1px solid rgba(142, 164, 198, 0.27) !important;
+  border-radius: 5px !important;
+  padding: 0.26rem 0.48rem !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.viewerSidebarPanel .viewerSidebarControlRow input[type="range"] {
+  min-width: 0;
+  width: 84px !important;
+  accent-color: #4b91ff;
+}
+
+.viewerSidebarPanel .viewerSidebarInstructions {
+  max-width: none !important;
+  margin-top: 0 !important;
+  padding: 0.7rem 0.72rem !important;
+  line-height: 1.5 !important;
+}
+
+.viewerSidebarAddonHost {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.viewerMarkerSidebar {
+  width: min(270px, calc(100vw - 2rem));
+  max-height: min(360px, calc(100dvh - 250px));
+  overflow: hidden;
+  margin-top: 4px;
+  padding: 0.85rem;
+  box-sizing: border-box;
+  border: 1px solid rgba(142, 164, 198, 0.25);
+  border-radius: 8px;
+  background: rgba(14, 22, 35, 0.9);
+  backdrop-filter: blur(7px);
+  color: #eef3fc;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+}
+
+.viewerSidebarPanel .viewerMarkerSidebar {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  max-height: none;
+  margin-top: 0;
+  padding: 0.72rem;
+  background: rgba(4, 8, 15, 0.36);
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+.viewerMarkerSidebarMobile {
+  display: none;
+}
+
+.viewerMarkerSidebarToggle {
+  display: none;
+}
+
+.viewerMarkerSidebar h2 {
+  margin: 0 0 0.7rem;
+  font-size: 1rem;
+  font-weight: 620;
+}
+
+.viewerMarkerList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  overflow-y: auto;
+  max-height: calc(100dvh - 6.5rem);
+}
+
+.viewerSidebarPanel .viewerMarkerList {
+  min-height: 0;
+  max-height: none;
+}
+
+.viewerMarkerList button {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(142, 164, 198, 0.15);
+  border-radius: 6px;
+  background: rgba(4, 8, 15, 0.36);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.viewerMarkerList button.active {
+  border-color: rgba(71, 132, 245, 0.7);
+  background: rgba(47, 99, 193, 0.28);
+}
+
+.viewerMarkerList img {
+  flex-shrink: 0;
+  width: 1.55rem;
+  height: 1.55rem;
+  object-fit: contain;
+}
+
+.viewerMarkerList span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewerSidebarPanel .viewerSidebarTechnical {
+  flex-shrink: 0;
+  margin-top: auto;
+  padding: 0.65rem 0.72rem !important;
+  color: #aebdd4 !important;
+  line-height: 1.45;
+}
+
+.markerEditorShell {
+  display: flex;
+  overflow: hidden;
+  background: #0b1018;
+  color: #e8eef9;
+}
+
+.markerEditorViewer {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: #070b12;
+  border: 1px solid rgba(142, 164, 198, 0.22);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  overflow: hidden;
+}
+
+.markerEditorCanvas {
+  position: absolute;
+  inset: 0;
+}
+
+.markerViewPositionNotice {
+  position: absolute;
+  left: 50%;
+  bottom: 1.35rem;
+  z-index: 120;
+  transform: translateX(-50%);
+  padding: 0.62rem 1rem;
+  border: 1px solid rgba(58, 210, 117, 0.52);
+  border-radius: 999px;
+  background: rgba(13, 40, 26, 0.9);
+  color: #74e99b;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+.markerEditorSidebar {
+  width: clamp(380px, 27vw, 440px);
+  min-width: 380px;
+  min-height: 0;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #111a29 0%, #101827 100%);
+  border: 1px solid rgba(142, 164, 198, 0.22);
+  border-radius: 0 8px 8px 0;
+  box-shadow: inset 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.markerEditorScroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.markerEditorHeader,
+.markerEditorSection,
+.markerEditorStatus {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(142, 164, 198, 0.15);
+}
+
+.markerEditorTitleRow,
+.markerSectionTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.markerEditorTitleRow h1 {
+  margin: 0;
+  color: #f7faff;
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.markerDirtyFlag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  color: #9eafca;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.markerDirtyFlag::before {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  content: "";
+  background: #53637b;
+}
+
+.markerDirtyFlag.isDirty {
+  color: #53dc7a;
+}
+
+.markerDirtyFlag.isDirty::before {
+  background: #33d36d;
+  box-shadow: 0 0 11px rgba(51, 211, 109, 0.48);
+}
+
+.markerFieldCard {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+  margin-top: 0.9rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(142, 164, 198, 0.16);
+  border-radius: 8px;
+  background: rgba(5, 10, 18, 0.42);
+  color: #aebbd0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.markerFieldCard strong {
+  color: #f1f5fc;
+  font-size: 0.98rem;
+  font-weight: 620;
+}
+
+.markerEditorSidebar h2 {
+  margin: 0 0 0.75rem;
+  color: #ecf2fc;
+  font-size: 1rem;
+  font-weight: 620;
+  letter-spacing: 0;
+}
+
+.markerSectionTitle h2 {
+  margin-bottom: 0;
+}
+
+.markerSectionTitle span {
+  min-width: 1.6rem;
+  padding: 0.12rem 0.44rem;
+  border: 1px solid rgba(142, 164, 198, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #c8d4e7;
+  text-align: center;
+  font-size: 0.78rem;
+}
+
+.markerModeTabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid rgba(142, 164, 198, 0.24);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.markerModeTabs button {
+  min-height: 2.15rem;
+  border: 0;
+  border-right: 1px solid rgba(142, 164, 198, 0.2);
+  background: transparent;
+  color: #d0daea;
+  cursor: pointer;
+  font-size: 0.86rem;
+}
+
+.markerModeTabs button:last-child {
+  border-right: 0;
+}
+
+.markerModeTabs button.active {
+  background: linear-gradient(180deg, #3162bb, #2853a4);
+  color: #f9fbff;
+}
+
+.markerEditorHint,
+.markerEmptyState {
+  margin: 0 0 0.9rem;
+  color: #9eacc3;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.markerEmptyState {
+  margin: 0;
+  padding: 0.8rem;
+  border: 1px dashed rgba(142, 164, 198, 0.22);
+  border-radius: 7px;
+  background: rgba(4, 8, 15, 0.32);
+}
+
+.markerList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.markerList button {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.72rem 0.8rem;
+  border: 1px solid rgba(142, 164, 198, 0.16);
+  border-radius: 7px;
+  background: rgba(4, 8, 15, 0.38);
+  color: #e5edf9;
+  cursor: pointer;
+  text-align: left;
+}
+
+.markerList button.active {
+  border-color: rgba(71, 132, 245, 0.7);
+  background: rgba(47, 99, 193, 0.24);
+}
+
+.markerList button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markerList button small {
+  flex-shrink: 0;
+  color: #91a1bb;
+  font-size: 0.73rem;
+}
+
+.markerForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.62rem;
+}
+
+.markerForm h2 {
+  margin-bottom: 0.08rem;
+}
+
+.markerEditorSidebar label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #afbed5;
+  font-size: 0.83rem;
+}
+
+.markerEditorSidebar output {
+  color: #d6dfed;
+  font-size: 0.8rem;
+}
+
+.markerEditorSidebar input:not([type="range"]),
+.markerEditorSidebar textarea,
+.markerEditorSidebar select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(142, 164, 198, 0.26);
+  border-radius: 6px;
+  background: rgba(4, 8, 15, 0.5);
+  color: #e9f0fa;
+  padding: 0.65rem 0.72rem;
+  font-size: 0.9rem;
+}
+
+.markerEditorSidebar textarea {
+  min-height: 6.1rem;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.markerEditorSidebar input[type="range"] {
+  width: 100%;
+  accent-color: #4b91ff;
+}
+
+.markerEditorSidebar input:focus,
+.markerEditorSidebar textarea:focus,
+.markerEditorSidebar select:focus {
+  outline: 2px solid rgba(70, 139, 255, 0.45);
+  outline-offset: 0;
+}
+
+.markerRangeRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.4rem;
+  align-items: center;
+  gap: 0.62rem;
+}
+
+.markerEditorCallout {
+  margin-top: 0.35rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(63, 135, 255, 0.42);
+  border-radius: 7px;
+  background: rgba(21, 56, 114, 0.2);
+  color: #c0d1eb;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.markerViewCaptured {
+  color: #74e99b;
+  font-size: 0.78rem;
+}
+
+.markerPrimaryButton,
+.markerSubtleButton,
+.markerDangerButton,
+.markerEditorActions button {
+  min-height: 2.35rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #e7effc;
+}
+
+.markerPrimaryButton {
+  margin-top: 0.32rem;
+  border: 1px solid rgba(68, 135, 255, 0.7);
+  background: linear-gradient(180deg, #3164c2, #2856aa);
+}
+
+.markerSubtleButton {
+  border: 1px solid rgba(142, 164, 198, 0.24);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.markerDangerButton {
+  margin-top: 0.45rem;
+  border: 1px solid rgba(230, 67, 88, 0.55);
+  background: rgba(153, 34, 50, 0.2);
+  color: #ff8999;
+}
+
+.markerPositionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.markerPositionGrid label {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.32rem;
+  font-size: 0.78rem;
+}
+
+.markerEditorStatus {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: #c0cde1;
+  font-size: 0.83rem;
+}
+
+.markerEditorStatus .error {
+  color: #ff94a3;
+}
+
+.markerEditorStatus .success {
+  color: #74e99b;
+}
+
+.markerEditorActions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem 0.9rem;
+  border-top: 1px solid rgba(142, 164, 198, 0.2);
+  background: rgba(12, 20, 33, 0.98);
+  color: #aebdd4;
+  font-size: 0.82rem;
+}
+
+.markerEditorActions button {
+  padding: 0 0.85rem;
+  border: 1px solid rgba(142, 164, 198, 0.28);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.markerEditorActions button.save {
+  border-color: rgba(35, 175, 91, 0.55);
+  background: linear-gradient(180deg, rgba(34, 139, 82, 0.92), rgba(25, 112, 66, 0.92));
+  color: #ecfff4;
+}
+
+.markerEditorActions button:disabled,
+.markerPrimaryButton:disabled,
+.markerSubtleButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Above Leaflet panes (tile 200, overlay 400, marker 600, popup 700, controls 1000) */
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+@media (pointer: coarse) {
+  .viewerDesktopControls {
+    display: none !important;
+  }
+
+  .viewerMarkerSidebarMobile {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 102;
+    width: min(280px, calc(100% - 58px));
+    max-height: none;
+    margin-top: 0;
+    padding: calc(max(8px, env(safe-area-inset-top)) + 74px) 0.85rem
+      max(18px, env(safe-area-inset-bottom));
+    border-radius: 0 10px 10px 0;
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .viewerMarkerSidebarMobile.isOpen {
+    transform: translateX(0);
+    pointer-events: auto;
+    visibility: visible;
+  }
+
+  .viewerMarkerSidebarMobile .viewerMarkerList {
+    min-height: 0;
+    max-height: none;
+    flex: 1 1 auto;
+  }
+
+  .viewerMarkerSidebarToggle {
+    position: absolute;
+    top: calc(max(8px, env(safe-area-inset-top)) + 76px);
+    left: 0;
+    z-index: 103;
+    display: flex;
+    align-items: center;
+    gap: 0.38rem;
+    padding: 0.68rem 0.45rem 0.68rem 0.58rem;
+    border: 1px solid rgba(142, 164, 198, 0.3);
+    border-left: 0;
+    border-radius: 0 8px 8px 0;
+    background: rgba(14, 22, 35, 0.94);
+    backdrop-filter: blur(7px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.26);
+    color: #eef3fc;
+    cursor: pointer;
+    writing-mode: vertical-rl;
+    transform: translateX(0);
+    transition: transform 180ms ease;
+  }
+
+  .viewerMarkerSidebarToggle.isOpen {
+    transform: translateX(min(280px, calc(100vw - 58px)));
+  }
+
+  .viewerMarkerSidebarToggle span {
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+}
+
+@media (max-width: 900px) {
+  .markerEditorShell {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .markerEditorViewer {
+    min-height: 54dvh;
+    border-right: 1px solid rgba(142, 164, 198, 0.22);
+    border-radius: 8px 8px 0 0;
+  }
+
+  .markerEditorSidebar {
+    width: 100%;
+    min-width: 0;
+    min-height: 46dvh;
+    border-radius: 0 0 8px 8px;
+  }
+
+  .markerEditorActions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .markerEditorActions span {
+    grid-column: 1 / -1;
+  }
+
+  .float-right,
+  .float-left {
+    float: none;
+    width: 100%;
+    margin: 1rem 0;
+  }
+}
