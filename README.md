@@ -28,6 +28,49 @@ backend/     Legacy Node server (not used in current AWS deployment)
 
 ---
 
+## PlayCanvas migration (in progress)
+
+We are moving the splat renderer from **`@mkkellogg/gaussian-splats-3d` + Three.js** to the **[PlayCanvas Engine](https://developer.playcanvas.com/user-manual/gaussian-splatting/)** (`@playcanvas/engine`) for better mobile performance (WebGPU, streamed LOD). This is a **client renderer swap only** — hosting stays **S3 + CloudFront**, data stays **DynamoDB + Lambda**, auth unchanged.
+
+**Approach:** Engine-first (PlayCanvas inside our Vite apps), not the SuperSplat Viewer embed.
+
+| | Today (production) | Target |
+|--|-------------------|--------|
+| Viewer / editor renderer | Three.js + mkkellogg | PlayCanvas Engine |
+| Splat format | `.ksplat` on assets CDN | Streamed LOD (`lod-meta.json` + chunks) |
+| DynamoDB `File` | Legacy `.ksplat` URL | PlayCanvas URL at cutover (Phase 7) |
+| DynamoDB `FilePlayCanvas` | Populated for migrated fields | All fields; engine reads this in Phase 2+ |
+
+### Done so far
+
+- **Evaluation & plan** — tradeoffs, phased migration, engine-first decision ([`docs/PLAYCANVAS-SPLAT-EVALUATION.md`](docs/PLAYCANVAS-SPLAT-EVALUATION.md), [`docs/PLAYCANVAS-MIGRATION-PLAN.md`](docs/PLAYCANVAS-MIGRATION-PLAN.md))
+- **Conversion tooling** — [`scripts/splat/README.md`](scripts/splat/README.md) (`@playcanvas/splat-transform`: `.ksplat` → streamed LOD)
+- **Assets on CDN** — production splats converted to streamed LOD and uploaded to the assets bucket (alongside existing `.ksplat` files)
+- **DynamoDB** — `FilePlayCanvas` and `FileFormat` added on field records (e.g. `streamed-lod` manifest URL)
+- **API (code)** — Lambda `/pins` exposes `FilePlayCanvas` / `FileFormat`; `/fields` and `/fields/{id}` pass them through from DynamoDB ([`lambda-handler.mjs`](lambda-handler.mjs) + lab repo `lambda/handler.mjs`)
+- **App types** — `Field`, `Pin`, and `publicApi.ts` updated to carry PlayCanvas fields (viewer still loads `path` / `.ksplat` until Phase 5)
+
+### Still needed (Phase 1 close-out)
+
+- [ ] **Deploy Lambda** — HCP Terraform apply so live `/pins` returns the new fields
+- [ ] **Backfill** — confirm every production field has `FilePlayCanvas` + `FileFormat` in DynamoDB
+- [ ] **CDN checks** — `Cache-Control` on LOD chunk objects; CORS from viewer/admin origins ([`docs/SPLAT-CACHING.md`](docs/SPLAT-CACHING.md))
+- [ ] **Engine smoke test** — load each `FilePlayCanvas` URL with `@playcanvas/engine` (dev harness); verify orientation vs current viewer
+- [ ] **Regression** — current `/viewer` and admin editor still work on `.ksplat` / `File`
+
+### Next up (Phase 2+)
+
+- [ ] **`packages/playcanvas-viewer`** — `PlayCanvasApp` wrapper (`loadScene`, camera, dispose)
+- [ ] **Parallel route** — e.g. `/viewer-pc/?m={FieldID}` using `FilePlayCanvas` (default viewer unchanged until Phase 5)
+- [ ] **Markers** — map DynamoDB markers → engine hotspots / annotations (Phase 3)
+- [ ] **Viewer cutover** — replace default viewer + inline map viewer (Phase 5)
+- [ ] **Editor on PlayCanvas** — admin marker placement (Phase 6)
+- [ ] **Retire mkkellogg** — remove Three.js splat stack and `.ksplat` URLs (Phase 7)
+
+**Checklist:** [`docs/PLAYCANVAS-PHASE-0-1-TODOS.md`](docs/PLAYCANVAS-PHASE-0-1-TODOS.md)
+
+---
+
 ## AWS services (runtime dependencies)
 
 Production runs entirely on AWS. The frontend apps are static sites; data and auth are backend services provisioned by Terraform.
@@ -35,7 +78,7 @@ Production runs entirely on AWS. The frontend apps are static sites; data and au
 | Service | Role |
 |---------|------|
 | **S3 + CloudFront** (×2) | Host viewer and admin SPAs (separate buckets and distributions) |
-| **S3 + CloudFront** (assets) | Public splat/thumbnail files (`.ksplat`, images) |
+| **S3 + CloudFront** (assets) | Splat/thumbnail files (`.ksplat` today; streamed PlayCanvas LOD on same CDN) |
 | **API Gateway + Lambda** | REST API: public `/pins`, `/fields` and authenticated `/admin/api/*` |
 | **DynamoDB** | Field/site records (locations, splat URLs, markers) |
 | **Cognito** | Admin login only (Hosted UI + OAuth PKCE) |
@@ -138,4 +181,4 @@ Production deploy: build each app, `aws s3 sync` to the matching site bucket, Cl
 
 ## Tech stack (summary)
 
-React 19, TypeScript, Vite 7, React Router 7, Three.js, `@mkkellogg/gaussian-splats-3d`, Leaflet. Admin auth uses the **`aws-amplify` npm client** against Cognito (not Amplify Hosting).
+React 19, TypeScript, Vite 7, React Router 7, Leaflet. **Splat rendering:** production uses Three.js + `@mkkellogg/gaussian-splats-3d`; **in migration** to `@playcanvas/engine` (see above). Admin auth uses the **`aws-amplify` npm client** against Cognito (not Amplify Hosting).
