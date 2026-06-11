@@ -9,6 +9,14 @@ function parseOrientation(value: string | null): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Root-relative `/work-out/…` or absolute `https://…`; not relative to `/viewer-pc/`. */
+function normalizeSplatUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
 export default function PlayCanvasSmoke() {
   const [searchParams, setSearchParams] = useSearchParams();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -47,7 +55,7 @@ export default function PlayCanvasSmoke() {
     (async () => {
       setError("");
       try {
-        let splatUrl = directUrl.trim();
+        let splatUrl = normalizeSplatUrl(directUrl);
         let label = splatUrl;
 
         if (!splatUrl) {

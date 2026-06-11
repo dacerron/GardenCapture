@@ -9,38 +9,79 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
 const workOutDir = path.resolve(repoRoot, "work/out");
 
-/** Dev-only static route: /work-out/{basename}/lod-meta.json → repo work/out/ */
+const WORK_OUT_MIME: Record<string, string> = {
+  ".json": "application/json",
+  ".webp": "image/webp",
+  ".sog": "application/octet-stream",
+};
+
+/** Dev/preview static route: /work-out/{basename}/… → repo work/out/ */
+function serveWorkOutMiddleware(
+  req: import("node:http").IncomingMessage,
+  res: import("node:http").ServerResponse,
+  next: (err?: unknown) => void,
+) {
+  const urlPath = req.url?.split("?")[0] ?? "";
+  if (!urlPath || urlPath === "/") return next();
+
+  // URL paths are POSIX; join under workOutDir without path.normalize (Windows-safe).
+  const segments = decodeURIComponent(urlPath)
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((segment) => segment && segment !== ".");
+  if (segments.some((segment) => segment === "..")) {
+    res.statusCode = 403;
+    res.end("Forbidden");
+    return;
+  }
+
+  const filePath = path.join(workOutDir, ...segments);
+  const relToRoot = path.relative(workOutDir, filePath);
+  if (relToRoot.startsWith("..") || path.isAbsolute(relToRoot)) {
+    res.statusCode = 403;
+    res.end("Forbidden");
+    return;
+  }
+  if (!existsSync(filePath)) {
+    res.statusCode = 404;
+    res.end("Not found");
+    return;
+  }
+
+  const stat = statSync(filePath);
+  if (stat.isDirectory()) return next();
+
+  const ext = path.extname(filePath).toLowerCase();
+  if (WORK_OUT_MIME[ext]) res.setHeader("Content-Type", WORK_OUT_MIME[ext]);
+  res.setHeader("Cache-Control", "no-store");
+
+  if (req.method === "HEAD") {
+    res.statusCode = 200;
+    res.end();
+    return;
+  }
+  if (req.method !== "GET") {
+    res.statusCode = 405;
+    res.end("Method not allowed");
+    return;
+  }
+
+  const stream = createReadStream(filePath);
+  stream.on("error", (err) => {
+    if (!res.headersSent) res.statusCode = 500;
+    res.end(String(err));
+  });
+  stream.pipe(res);
+}
+
 function serveWorkOutPlugin(): Plugin {
   return {
     name: "serve-work-out",
-    apply: "serve",
     configureServer(server) {
-      server.middlewares.use("/work-out", (req, res, next) => {
-        const urlPath = req.url?.split("?")[0] ?? "";
-        if (!urlPath || urlPath === "/") return next();
-
-        const rel = path.normalize(decodeURIComponent(urlPath)).replace(/^[/\\]+/, "");
-        const filePath = path.resolve(workOutDir, rel);
-        const relToRoot = path.relative(workOutDir, filePath);
-        if (relToRoot.startsWith("..") || path.isAbsolute(relToRoot)) {
-          res.statusCode = 403;
-          res.end("Forbidden");
-          return;
-        }
-        if (!existsSync(filePath)) return next();
-
-        const stat = statSync(filePath);
-        if (stat.isDirectory()) return next();
-
-        const ext = path.extname(filePath).toLowerCase();
-        const types: Record<string, string> = {
-          ".json": "application/json",
-          ".webp": "image/webp",
-        };
-        if (types[ext]) res.setHeader("Content-Type", types[ext]);
-
-        createReadStream(filePath).pipe(res);
-      });
+      server.middlewares.use("/work-out", serveWorkOutMiddleware);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use("/work-out", serveWorkOutMiddleware);
     },
   };
 }

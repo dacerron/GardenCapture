@@ -6,7 +6,7 @@
 # Optional env overrides (meters):
 #   SPLAT_POSITION_OUTLIER_M=200   trigger position crop when |coord| exceeds this
 #   SPLAT_POSITION_BOX_HALF_M=150  half-extent of symmetric crop box (-N..N per axis)
-#   SPLAT_ROTATION=180,0,0         Euler degrees for -r (matches legacy mkkellogg flip); use "none" to skip
+#   SPLAT_ROTATION=180,0,0         optional Euler degrees for -r (not applied by default)
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
@@ -26,14 +26,11 @@ $PositionBoxHalfExtentM = if ($env:SPLAT_POSITION_BOX_HALF_M) {
     [double]$env:SPLAT_POSITION_BOX_HALF_M
 } else { 150.0 }
 
-# Legacy viewer (GaussianViewer.ts) applies rotation [1,0,0,0] on load — ~180° X vs raw export.
-# Bake the same correction into PlayCanvas LOD so /viewer-pc matches /viewer/ without ?orientation=.
-$SplatRotation = if ($env:SPLAT_ROTATION -eq "none" -or $env:SPLAT_ROTATION -eq "0") {
-    $null
-} elseif ($env:SPLAT_ROTATION) {
+# Rotation is applied at viewer load (e.g. /viewer-pc ?orientation=), not baked into LOD by default.
+$SplatRotation = if ($env:SPLAT_ROTATION -and $env:SPLAT_ROTATION -ne "none" -and $env:SPLAT_ROTATION -ne "0") {
     $env:SPLAT_ROTATION
 } else {
-    "180,0,0"
+    $null
 }
 
 # Remove Gaussians with -Infinity log-scale (PlayCanvas renders these as screen-filling blobs).
@@ -148,7 +145,7 @@ function Repair-PlayCanvasSplatData {
     Write-Host "[1/3] ksplat/splat -> lod0.ply (PlayCanvas cleanup)"
     $importArgs = @("-w", $InputPath)
     if ($SplatRotation) {
-        Write-Host "      rotation -r $SplatRotation (legacy viewer alignment)"
+        Write-Host "      rotation -r $SplatRotation (SPLAT_ROTATION)"
         $importArgs += @("-r", $SplatRotation)
     }
     # Parentheses required — without them PowerShell only passes the first @(...) array.
