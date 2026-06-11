@@ -39,6 +39,10 @@ Expected URL:
 /viewer/?m={FieldID}
 ```
 
+(`/?m={FieldID}` on the viewer app root redirects to `/viewer/?m=…`.)
+
+**URL stability:** External sites (e.g. class LMS pages) embed viewer and asset URLs. Do not change viewer domain, `/viewer/?m=` shape, DynamoDB `FieldID` values, or assets CDN `File` URLs without an agreed migration. PlayCanvas LOD uses separate `FilePlayCanvas` paths until cutover. See [`PLAYCANVAS-MIGRATION-PLAN.md`](./PLAYCANVAS-MIGRATION-PLAN.md#url-stability-external-integrations).
+
 ### Authenticated Admin
 
 Location: `apps/admin`

@@ -42,11 +42,13 @@ export async function getFieldById(fieldId: string): Promise<Field | null> {
   const requested = fieldId.trim();
   if (!requested) return null;
 
-  const listedField = (await getFields()).find((field) => field.FieldID === requested);
-  if (!listedField) return null;
+  const raw = await publicFetch<unknown | null>(`/fields/${encodeURIComponent(requested)}`);
+  if (raw) {
+    const normalized = normalizeFieldItem(raw);
+    if (normalized) return normalized;
+  }
 
-  const raw = await publicFetch<unknown | null>(`/fields/${encodeURIComponent(listedField.FieldID)}`);
-  return raw ? normalizeFieldItem(raw) ?? listedField : listedField;
+  return (await getFields()).find((field) => field.FieldID === requested) ?? null;
 }
 
 export async function getPins(): Promise<Pin[]> {

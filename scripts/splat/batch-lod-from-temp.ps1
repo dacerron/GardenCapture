@@ -1,10 +1,12 @@
 # Build streamed LOD bundles for every splat in repo temp/
+# Usage & prerequisites: batch-lod-from-temp.md (same folder)
 # Usage (from repo root):
 #   powershell -ExecutionPolicy Bypass -File scripts/splat/batch-lod-from-temp.ps1
 #
 # Optional env overrides (meters):
 #   SPLAT_POSITION_OUTLIER_M=200   trigger position crop when |coord| exceeds this
 #   SPLAT_POSITION_BOX_HALF_M=150  half-extent of symmetric crop box (-N..N per axis)
+#   SPLAT_ROTATION=180,0,0         Euler degrees for -r (matches legacy mkkellogg flip); use "none" to skip
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
@@ -23,6 +25,16 @@ $PositionOutlierThresholdM = if ($env:SPLAT_POSITION_OUTLIER_M) {
 $PositionBoxHalfExtentM = if ($env:SPLAT_POSITION_BOX_HALF_M) {
     [double]$env:SPLAT_POSITION_BOX_HALF_M
 } else { 150.0 }
+
+# Legacy viewer (GaussianViewer.ts) applies rotation [1,0,0,0] on load — ~180° X vs raw export.
+# Bake the same correction into PlayCanvas LOD so /viewer-pc matches /viewer/ without ?orientation=.
+$SplatRotation = if ($env:SPLAT_ROTATION -eq "none" -or $env:SPLAT_ROTATION -eq "0") {
+    $null
+} elseif ($env:SPLAT_ROTATION) {
+    $env:SPLAT_ROTATION
+} else {
+    "180,0,0"
+}
 
 # Remove Gaussians with -Infinity log-scale (PlayCanvas renders these as screen-filling blobs).
 # --filter-nan intentionally keeps -Inf in scale_*; use raw scale filters instead.
@@ -44,11 +56,16 @@ function Invoke-SplatTransform {
     param([string[]]$SplatCliArgs)
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & splat-transform @SplatCliArgs
+    $output = & splat-transform @SplatCliArgs 2>&1 | Out-String
     $code = $LASTEXITCODE
     $ErrorActionPreference = $prev
     if ($code -ne 0) {
-        throw "splat-transform failed (exit $code): splat-transform $($SplatCliArgs -join ' ')"
+        $cmd = "splat-transform $($SplatCliArgs -join ' ')"
+        $detail = $output.Trim()
+        if ($detail) {
+            throw "splat-transform failed (exit $code): $cmd`n$detail"
+        }
+        throw "splat-transform failed (exit $code): $cmd"
     }
 }
 
@@ -101,11 +118,10 @@ function Get-SplatSummary {
         if ($row.Column -match '^scale_') {
             $summary.ScaleInfTotal += $row.Infs
         } else {
-            $summary.MaxAbsCoord = [math]::Max(
-                $summary.MaxAbsCoord,
-                [math]::Abs($row.Min),
-                [math]::Abs($row.Max)
-            )
+            $axisMax = [math]::Max([math]::Abs($row.Min), [math]::Abs($row.Max))
+            if ($axisMax -gt $summary.MaxAbsCoord) {
+                $summary.MaxAbsCoord = $axisMax
+            }
         }
     }
 
@@ -130,7 +146,13 @@ function Repair-PlayCanvasSplatData {
     )
 
     Write-Host "[1/3] ksplat/splat -> lod0.ply (PlayCanvas cleanup)"
-    Invoke-SplatTransform -SplatCliArgs @("-w", $InputPath) + $ScaleInfFilters + @($Lod0Path)
+    $importArgs = @("-w", $InputPath)
+    if ($SplatRotation) {
+        Write-Host "      rotation -r $SplatRotation (legacy viewer alignment)"
+        $importArgs += @("-r", $SplatRotation)
+    }
+    # Parentheses required — without them PowerShell only passes the first @(...) array.
+    Invoke-SplatTransform -SplatCliArgs ($importArgs + $ScaleInfFilters + @($Lod0Path))
 
     $summary = Get-SplatSummary $Lod0Path
     Write-BatchLog "  $BaseName after scale-inf filter: $($summary.CountM)M gaussians, max |coord|=$($summary.MaxAbsCoord)m, scale infs=$($summary.ScaleInfTotal)"
@@ -171,7 +193,8 @@ function Ensure-Dir {
 }
 
 Ensure-Dir (Join-Path $RepoRoot "work")
-Write-BatchLog "=== batch-lod-from-temp start (outlier>${PositionOutlierThresholdM}m -> box +/-${PositionBoxHalfExtentM}m) ==="
+$rotationLog = if ($SplatRotation) { $SplatRotation } else { "none" }
+Write-BatchLog "=== batch-lod-from-temp start (outlier>${PositionOutlierThresholdM}m -> box +/-${PositionBoxHalfExtentM}m, rotation=$rotationLog) ==="
 
 $inputs = Get-ChildItem -Path $TempDir -File |
     Where-Object { $_.Extension -match '^\.(ksplat|splat|ply)$' } |

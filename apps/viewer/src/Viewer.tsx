@@ -190,7 +190,7 @@ export default function Viewer({ gaussianPath, markers, startPos, sceneInfo, onB
       return;
     }
 
-    const fieldId = searchParams.get("m")?.trim();
+    const fieldId = searchParams.get("m")?.trim() ?? "";
     if (!fieldId) {
       setLoadState({
         status: "error",

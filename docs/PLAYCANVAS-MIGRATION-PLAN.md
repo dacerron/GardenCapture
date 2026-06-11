@@ -41,6 +41,27 @@ Phase 7  Decommission Three.js splat stack
 
 Phases 1–3 can overlap slightly. Phases 4–6 are sequential. **Do not skip Phase 0** — it gates spend on Phases 4–6.
 
+---
+
+## URL stability (external integrations)
+
+**Do not change viewer or asset URLs/domains casually.** External systems (e.g. a class site) embed stable links:
+
+| Link type | Stable form | Notes |
+|-----------|-------------|--------|
+| Viewer per field | `https://{viewer_domain}/viewer/?m={FieldID}` | `FieldID` must not change; `/?m=` redirects to `/viewer/?m=` |
+| Legacy splat asset | DynamoDB `File` → assets CDN URL | Keep path and hostname until Phase 7 cutover |
+| PlayCanvas LOD (new) | DynamoDB `FilePlayCanvas` → `splats/lod/{basename}/lod-meta.json` | Additive; must not break `File` |
+
+**Rules for migration work**
+
+1. **Never** overwrite or delete production `.ksplat` / `.splat` at existing `File` URLs when uploading LOD bundles.
+2. **Never** change viewer CloudFront domain or `/viewer/?m=` route shape without notifying embed partners.
+3. **`FilePlayCanvas` is additive** until Phase 5+ default viewer cutover; legacy `/viewer/` keeps using `File`.
+4. Phase 7 (`File` → PlayCanvas URL) requires **explicit coordination** with anyone embedding viewer or direct asset URLs.
+
+---
+
 | Phase | Duration (estimate) | Primary owner |
 |-------|---------------------|---------------|
 | 0 — Validate | 3–5 days | Dev + stakeholder |

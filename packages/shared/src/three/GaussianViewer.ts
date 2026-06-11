@@ -189,12 +189,19 @@ export class GaussianViewer {
     this.viewer.dispose();
   }
 
-  private waitForViewerReady(token: number, stableFrameTarget = 12) {
+  private waitForViewerReady(token: number, stableFrameTarget = 12, maxWaitMs = 120_000) {
     return new Promise<void>((resolve) => {
       let stableFrames = 0;
+      const startedAt = performance.now();
 
       const step = () => {
         if (this.destroyed || token !== this.loadToken) {
+          resolve();
+          return;
+        }
+
+        if (performance.now() - startedAt >= maxWaitMs) {
+          console.warn("[GaussianViewer] Timed out waiting for splat reveal; continuing anyway.");
           resolve();
           return;
         }

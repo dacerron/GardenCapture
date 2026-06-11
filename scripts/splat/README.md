@@ -147,17 +147,28 @@ Full guide: [PlayCanvas — Generating Streamed SOG](https://github.com/playcanv
 
 ---
 
-## 5. Orientation check
+## 5. Orientation (legacy viewer vs PlayCanvas)
 
-The current Three.js viewer applies a **180° flip** when loading mkkellogg splats (`rotation: [1, 0, 0, 0]` in `GaussianViewer.ts`). PlayCanvas may show the scene upright without that, or upside-down.
+**`splat-transform` does not flip splats** — it exports the same coordinates as the source file.
 
-After conversion, load in a PlayCanvas engine smoke test. If wrong, re-export with rotation (Euler degrees):
+The **legacy `/viewer/`** applies a **180° X correction at load time** in `GaussianViewer.ts` (`rotation: [1, 0, 0, 0]` for mkkellogg). **PlayCanvas does not**, so raw LOD exports look upside-down unless you correct them.
+
+**Batch script (default):** [`batch-lod-from-temp.ps1`](batch-lod-from-temp.ps1) applies `-r 180,0,0` on import so PlayCanvas LOD matches legacy `/viewer/`. Disable with:
+
+```powershell
+$env:SPLAT_ROTATION = "none"
+powershell -ExecutionPolicy Bypass -File scripts/splat/batch-lod-from-temp.ps1
+```
+
+**Manual one-off:**
 
 ```bash
 splat-transform ./work/scene.ksplat -r 180,0,0 ./work/out/scene.sog
 ```
 
-Adjust axis/angle until engine view matches the current production viewer.
+**Already-uploaded LOD (no re-export):** use the smoke harness query flag `?orientation=180` until you re-run the batch script and re-upload.
+
+Adjust axis/angle if a specific scene still differs after comparing side-by-side with `/viewer/?m={FieldID}`.
 
 ---
 
@@ -208,6 +219,8 @@ Keep existing `File` (`.ksplat`) for the current viewer. Add PlayCanvas fields f
 | `FilePlayCanvas` | `https://{assets_cdn}/splats/lod/UM_ResearchStation_01/lod-meta.json` |
 | `FileFormat` | `streamed-lod` or `sog` |
 
+**URL stability:** Partners embed `https://{viewer_domain}/viewer/?m={FieldID}` and may link directly to `File` asset URLs. Upload LOD to **new** keys under `splats/lod/`; do not replace or remove objects at existing `File` paths. Do not change CloudFront domains or `FieldID` values without coordinating embed owners.
+
 ---
 
 ## Which format to pick?
@@ -221,6 +234,8 @@ Keep existing `File` (`.ksplat`) for the current viewer. Add PlayCanvas fields f
 ---
 
 ## Batch convert all files in `temp/`
+
+**Script docs:** [`batch-lod-from-temp.md`](batch-lod-from-temp.md) (prerequisites, usage, env vars, troubleshooting).
 
 From repo root (PowerShell):
 
@@ -248,6 +263,7 @@ Override thresholds:
 ```powershell
 $env:SPLAT_POSITION_OUTLIER_M = 200
 $env:SPLAT_POSITION_BOX_HALF_M = 150
+$env:SPLAT_ROTATION = "180,0,0"   # default; use "none" to skip
 powershell -ExecutionPolicy Bypass -File scripts/splat/batch-lod-from-temp.ps1
 ```
 

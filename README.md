@@ -34,6 +34,20 @@ We are moving the splat renderer from **`@mkkellogg/gaussian-splats-3d` + Three.
 
 **Approach:** Engine-first (PlayCanvas inside our Vite apps), not the SuperSplat Viewer embed.
 
+### URL stability (external integrations)
+
+**Viewer links and asset URLs must stay stable** unless a deliberate migration replaces them. A class site and other partners embed:
+
+- **Viewer:** `https://{viewer_domain}/viewer/?m={FieldID}` (also supported: `/?m={FieldID}` → redirects to `/viewer/`)
+- **Assets:** DynamoDB `File` URLs on the assets CDN (`.ksplat` / `.splat` today)
+
+During PlayCanvas migration:
+
+- Keep **`FieldID`** values unchanged (`AW2`, `UM_05`, etc.).
+- Keep **assets CDN hostname and `File` paths** serving legacy splats until an agreed cutover (Phase 7).
+- Add **`FilePlayCanvas`** under new prefixes (`splats/lod/…`) without breaking existing `File` links.
+- Do **not** rename S3 keys, change CloudFront domains, or repoint `File` without coordinating embed owners.
+
 | | Today (production) | Target |
 |--|-------------------|--------|
 | Viewer / editor renderer | Three.js + mkkellogg | PlayCanvas Engine |
@@ -62,7 +76,7 @@ We are moving the splat renderer from **`@mkkellogg/gaussian-splats-3d` + Three.
      Example: `http://localhost:5173/viewer-pc/?url=/work-out/UBC_Farm_Agricultural/lod-meta.json`
      Requires `work/out/{basename}/lod-meta.json` from the conversion script; served by Vite at `/work-out/` (no upload, no CORS).
 4. Compare side-by-side with legacy: `http://localhost:5173/viewer/?m={FieldID}` (`.ksplat` via `File`).
-5. If the scene is upside-down vs legacy, tune `?orientation=180` (Euler X degrees).
+5. **Orientation:** batch conversion applies `-r 180,0,0` by default (legacy viewer applies the same flip at load). Already-uploaded LOD without that fix: `?orientation=180` on `/viewer-pc/`.
 
 **Batch conversion** runs PlayCanvas-safe cleanup automatically (invalid scales + distant position outliers). See [`scripts/splat/README.md`](scripts/splat/README.md).
 
