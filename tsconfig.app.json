@@ -12,7 +12,9 @@
     "baseUrl": ".",
     "paths": {
       "@soil/shared": ["packages/shared/src/index.ts"],
-      "@soil/shared/*": ["packages/shared/src/*"]
+      "@soil/shared/*": ["packages/shared/src/*"],
+      "@soil/playcanvas-viewer": ["packages/playcanvas-viewer/src/index.ts"],
+      "@soil/playcanvas-viewer/*": ["packages/playcanvas-viewer/src/*"]
     },
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -29,6 +31,6 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["apps", "packages/shared/src"],
+  "include": ["apps", "packages/shared/src", "packages/playcanvas-viewer/src"],
   "exclude": ["dist", "node_modules"]
 }

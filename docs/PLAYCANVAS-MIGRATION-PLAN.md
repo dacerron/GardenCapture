@@ -6,6 +6,7 @@ Phased transition from **`@mkkellogg/gaussian-splats-3d` + Three.js** to **PlayC
 
 - [`PLAYCANVAS-SPLAT-EVALUATION.md`](./PLAYCANVAS-SPLAT-EVALUATION.md) — tradeoffs and scope
 - [`PLAYCANVAS-PHASE-0-1-TODOS.md`](./PLAYCANVAS-PHASE-0-1-TODOS.md) — actionable checklist for Phase 0 & 1
+- [`PLAYCANVAS-EDITOR-MIGRATION-PLAN.md`](./PLAYCANVAS-EDITOR-MIGRATION-PLAN.md) — detailed Phase 6 editor cutover plan
 - [`DECOUPLED-APPS.md`](./DECOUPLED-APPS.md) — viewer/admin split
 - [`DEPLOY-S3-CLOUDFRONT.md`](./DEPLOY-S3-CLOUDFRONT.md) — deploy and assets CDN
 - [`SPLAT-CACHING.md`](./SPLAT-CACHING.md) — cache headers on splat objects
@@ -356,6 +357,8 @@ Move or reimplement from `ThreeApp.ts`:
 ## Phase 6 — Editor migration (admin app)
 
 **Goal:** Admin `/editor` uses the same PlayCanvas stack as the viewer so marker placement matches rendered space.
+
+**Detailed plan:** [`PLAYCANVAS-EDITOR-MIGRATION-PLAN.md`](./PLAYCANVAS-EDITOR-MIGRATION-PLAN.md)
 
 ### Tasks
 

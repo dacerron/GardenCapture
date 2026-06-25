@@ -1,21 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { getFieldById, getFields } from "./publicApi";
-import { createPlayCanvasHarness } from "./playcanvas/createHarness";
-
-function parseOrientation(value: string | null): number {
-  if (!value) return 0;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-/** Root-relative `/work-out/…` or absolute `https://…`; not relative to `/viewer-pc/`. */
-function normalizeSplatUrl(url: string): string {
-  const trimmed = url.trim();
-  if (!trimmed) return trimmed;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-}
+import {
+  createPlayCanvasApp,
+  normalizeSplatUrl,
+  parseOrientationX,
+} from "@soil/playcanvas-viewer";
 
 export default function PlayCanvasSmoke() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -26,7 +16,7 @@ export default function PlayCanvasSmoke() {
 
   const fieldId = searchParams.get("m") ?? "";
   const directUrl = searchParams.get("url") ?? "";
-  const orientation = parseOrientation(searchParams.get("orientation"));
+  const orientationX = parseOrientationX(searchParams.get("orientation"));
 
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +39,7 @@ export default function PlayCanvasSmoke() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    let harness: { destroy: () => void } | null = null;
+    let app: { destroy: () => void } | null = null;
     let cancelled = false;
 
     (async () => {
@@ -78,14 +68,14 @@ export default function PlayCanvasSmoke() {
         if (cancelled) return;
         setStatus(`Loading splat: ${label}`);
 
-        harness = await createPlayCanvasHarness({
+        app = await createPlayCanvasApp({
           canvas,
           splatUrl,
-          orientationX: orientation,
+          orientationX,
         });
 
         if (cancelled) {
-          harness.destroy();
+          app.destroy();
           return;
         }
         setStatus(`Loaded — ${label}`);
@@ -99,9 +89,9 @@ export default function PlayCanvasSmoke() {
 
     return () => {
       cancelled = true;
-      harness?.destroy();
+      app?.destroy();
     };
-  }, [fieldId, directUrl, orientation]);
+  }, [fieldId, directUrl, orientationX]);
 
   function onFieldChange(nextId: string) {
     const next = new URLSearchParams(searchParams);
@@ -133,7 +123,7 @@ export default function PlayCanvasSmoke() {
           pointerEvents: "auto",
         }}
       >
-        <div style={{ fontWeight: 600, marginBottom: 6 }}>PlayCanvas smoke harness</div>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>PlayCanvas dev harness</div>
         <label style={{ display: "block", marginBottom: 8 }}>
           Field (from API `FilePlayCanvas`)
           <select
@@ -158,10 +148,10 @@ export default function PlayCanvasSmoke() {
           {" · "}
           <code>?url=https://…/lod-meta.json</code>
           {" · "}
-          <code>?orientation=180</code>
+          <code>?orientation=0</code> to disable default 180° flip
           {" · "}
           <a href="/viewer/" style={{ color: "#93c5fd" }}>
-            legacy viewer
+            production viewer
           </a>
         </div>
       </div>

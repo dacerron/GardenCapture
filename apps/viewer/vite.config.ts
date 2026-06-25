@@ -104,6 +104,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@soil/shared": path.resolve(repoRoot, "packages/shared/src"),
+      "@soil/playcanvas-viewer": path.resolve(repoRoot, "packages/playcanvas-viewer/src"),
     },
   },
   server: {

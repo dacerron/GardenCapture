@@ -1,20 +1,18 @@
 import { type CSSProperties, type FormEvent, Fragment, useEffect, useState } from "react";
 import { fetchAuthSession, signInWithRedirect, signOut } from "aws-amplify/auth";
 import { getCognitoSignOutRedirect } from "./auth";
-import { type CreateFieldPayload, type MarkerPayload, createField, deleteField, listFields, updateField } from "./adminApi";
+import {
+  type CreateFieldPayload,
+  type Field,
+  type MarkerPayload,
+  createField,
+  deleteField,
+  listFields,
+  updateField,
+} from "./adminApi";
 import { normalizeMarkerLabel } from "@soil/shared/types/markerLabel";
 
-type FieldItem = {
-  FieldID: string;
-  Name: string;
-  Description?: string;
-  Latitude?: number;
-  Longitude?: number;
-  File?: string;
-  Thumbnail?: string;
-  ThumbnailAlt?: string;
-  markers?: unknown;
-};
+type FieldItem = Field;
 
 type AuthState = "checking" | "authed";
 
@@ -217,12 +215,10 @@ export default function Admin() {
     setErr("");
   }
 
-  function openMarkerManager(fieldId: string, gaussianPath?: string) {
+  function openMarkerManager(field: Pick<FieldItem, "FieldID" | "File" | "FilePlayCanvas">) {
     const params = new URLSearchParams();
-    params.set("fieldId", fieldId);
+    params.set("fieldId", field.FieldID.trim());
     params.set("controlMode", "fly");
-    const trimmedPath = gaussianPath?.trim();
-    if (trimmedPath) params.set("gaussianPath", trimmedPath);
     const editorUrl = new URL("/editor", window.location.origin);
     editorUrl.search = params.toString();
     window.open(editorUrl.toString(), "_blank");
@@ -538,7 +534,15 @@ export default function Admin() {
                             <button
                               type="button"
                               style={modalButtonStyle}
-                              onClick={() => openMarkerManager(currentEditForm.FieldID, currentEditForm.File)}
+                              onClick={() =>
+                                openMarkerManager({
+                                  FieldID: currentEditForm.FieldID,
+                                  File: currentEditForm.File,
+                                  FilePlayCanvas: items.find(
+                                    (item) => item.FieldID === currentEditForm.FieldID,
+                                  )?.FilePlayCanvas,
+                                })
+                              }
                             >
                               Manage Markers
                             </button>
@@ -562,6 +566,14 @@ export default function Admin() {
                             <div>
                               <strong>File</strong>
                               <p style={{ margin: "4px 0 0" }}>{it.File ?? "—"}</p>
+                            </div>
+                            <div>
+                              <strong>FilePlayCanvas</strong>
+                              <p style={{ margin: "4px 0 0" }}>{it.FilePlayCanvas ?? "—"}</p>
+                            </div>
+                            <div>
+                              <strong>FileFormat</strong>
+                              <p style={{ margin: "4px 0 0" }}>{it.FileFormat ?? "—"}</p>
                             </div>
                             <div>
                               <strong>Thumbnail</strong>

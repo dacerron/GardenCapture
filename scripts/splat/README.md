@@ -247,6 +247,9 @@ This reads every `.ksplat` / `.splat` in [`temp/`](../temp/), writes:
 
 - Intermediate PLY LOD chain → `work/lod/{basename}/lod0.ply`, `lod1.ply`, …
 - Streamed LOD bundle → `work/out/{basename}/lod-meta.json` (+ chunk folders)
+- Ground collision voxels → `work/out/{basename}/collision.voxel.json` + `collision.voxel.bin`
+
+See [`batch-lod-from-temp.md`](batch-lod-from-temp.md) for collision env vars (`SPLAT_COLLISION`, `SPLAT_VOXEL_PARAMS`, …).
 
 Halves splat count at each level until coarsest ≤ ~1.05M Gaussians (max 3 decimation steps).
 
@@ -269,10 +272,17 @@ powershell -ExecutionPolicy Bypass -File scripts/splat/batch-lod-from-temp.ps1
 
 Log: [`work/batch-lod.log`](../work/batch-lod.log).
 
+**Monitor a running batch** (runtime, CPU, log, output folders):
+
+```bash
+bash scripts/splat/check-batch-progress.sh
+bash scripts/splat/check-batch-progress.sh --watch 10
+```
+
 **Local smoke test (no S3 upload):** with `npm run dev:viewer` running, open:
 
 ```text
-http://localhost:5173/viewer-pc/?url=/work-out/{basename}/lod-meta.json
+http://localhost:5173/viewer/?url=/work-out/{basename}/lod-meta.json
 ```
 
 Vite serves `work/out/` at `/work-out/` during dev only.

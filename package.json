@@ -6,7 +6,8 @@
   "workspaces": [
     "apps/viewer",
     "apps/admin",
-    "packages/shared"
+    "packages/shared",
+    "packages/playcanvas-viewer"
   ],
   "scripts": {
     "dev": "npm run dev:viewer",
@@ -16,6 +17,7 @@
     "build:viewer": "tsc -b && vite build --config apps/viewer/vite.config.ts",
     "build:admin": "tsc -b && vite build --config apps/admin/vite.config.ts",
     "typecheck": "tsc -b",
+    "verify:fileplaycanvas": "node scripts/splat/verify-fileplaycanvas-backfill.mjs",
     "lint": "eslint .",
     "preview:viewer": "vite preview --config apps/viewer/vite.config.ts",
     "preview:admin": "vite preview --config apps/admin/vite.config.ts"

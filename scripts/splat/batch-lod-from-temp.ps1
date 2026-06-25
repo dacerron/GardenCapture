@@ -7,6 +7,13 @@
 #   SPLAT_POSITION_OUTLIER_M=200   trigger position crop when |coord| exceeds this
 #   SPLAT_POSITION_BOX_HALF_M=150  half-extent of symmetric crop box (-N..N per axis)
 #   SPLAT_ROTATION=180,0,0         optional Euler degrees for -r (not applied by default)
+#   SPLAT_COLLISION=skip           skip collision.voxel.json generation (default: on)
+#   SPLAT_VOXEL_PARAMS=0.1,0.12    voxel size + opacity threshold (coarser = faster)
+#   SPLAT_VOXEL_FLOOR_FILL=1.6     floor-fill patch size (m); use "none" to skip
+#   SPLAT_COLLISION_SEED_POS=0,0,0 seed for voxel floor-fill
+#   SPLAT_COLLISION_SOURCE=coarse  voxelize coarsest lod PLY (default); use lod0 for max detail
+#   SPLAT_COLLISION_MESH=faces     also emit collision.collision.glb (optional debug mesh)
+#   SPLAT_COLLISION_STRICT=1       stop batch on collision failure (default: warn and continue)
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
@@ -26,7 +33,7 @@ $PositionBoxHalfExtentM = if ($env:SPLAT_POSITION_BOX_HALF_M) {
     [double]$env:SPLAT_POSITION_BOX_HALF_M
 } else { 150.0 }
 
-# Rotation is applied at viewer load (e.g. /viewer-pc ?orientation=), not baked into LOD by default.
+# Rotation is applied at viewer load (e.g. /viewer ?orientation=), not baked into LOD by default.
 $SplatRotation = if ($env:SPLAT_ROTATION -and $env:SPLAT_ROTATION -ne "none" -and $env:SPLAT_ROTATION -ne "0") {
     $env:SPLAT_ROTATION
 } else {
@@ -41,6 +48,24 @@ $ScaleInfFilters = @(
     "-V", "scale_2_raw,gt,-100"
 )
 
+# Ground collision for PlayCanvas viewer camera clamp (collision.voxel.json + .voxel.bin).
+$CollisionEnabled = -not (
+    $env:SPLAT_COLLISION -eq "skip" -or
+    $env:SPLAT_COLLISION -eq "none" -or
+    $env:SPLAT_COLLISION -eq "0" -or
+    $env:SPLAT_COLLISION -eq "false"
+)
+$VoxelParams = if ($env:SPLAT_VOXEL_PARAMS) { $env:SPLAT_VOXEL_PARAMS } else { "0.1,0.12" }
+$VoxelFloorFill = if ($env:SPLAT_VOXEL_FLOOR_FILL) { $env:SPLAT_VOXEL_FLOOR_FILL } else { "1.6" }
+$CollisionSeedPos = if ($env:SPLAT_COLLISION_SEED_POS) { $env:SPLAT_COLLISION_SEED_POS } else { "0,0,0" }
+$CollisionSourceMode = if ($env:SPLAT_COLLISION_SOURCE) { $env:SPLAT_COLLISION_SOURCE.ToLowerInvariant() } else { "coarse" }
+$CollisionMesh = if ($env:SPLAT_COLLISION_MESH -and $env:SPLAT_COLLISION_MESH -ne "none") {
+    $env:SPLAT_COLLISION_MESH
+} else {
+    $null
+}
+$CollisionStrict = $env:SPLAT_COLLISION_STRICT -eq "1"
+
 function Write-BatchLog {
     param([string]$Message)
     $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message"
@@ -50,10 +75,23 @@ function Write-BatchLog {
 
 # splat-transform logs progress to stderr; avoid PowerShell treating that as a terminating error.
 function Invoke-SplatTransform {
-    param([string[]]$SplatCliArgs)
+    param(
+        [string[]]$SplatCliArgs,
+        [switch]$StreamProgress
+    )
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    $output = & splat-transform @SplatCliArgs 2>&1 | Out-String
+    $output = ""
+    if ($StreamProgress) {
+        & splat-transform @SplatCliArgs 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            if ($line.Trim()) {
+                Write-Host "      $line"
+            }
+        }
+    } else {
+        $output = & splat-transform @SplatCliArgs 2>&1 | Out-String
+    }
     $code = $LASTEXITCODE
     $ErrorActionPreference = $prev
     if ($code -ne 0) {
@@ -142,7 +180,7 @@ function Repair-PlayCanvasSplatData {
         [string]$BaseName
     )
 
-    Write-Host "[1/3] ksplat/splat -> lod0.ply (PlayCanvas cleanup)"
+    Write-Host "[1/4] ksplat/splat -> lod0.ply (PlayCanvas cleanup)"
     $importArgs = @("-w", $InputPath)
     if ($SplatRotation) {
         Write-Host "      rotation -r $SplatRotation (SPLAT_ROTATION)"
@@ -189,9 +227,71 @@ function Ensure-Dir {
     New-Item -ItemType Directory -Force -Path $Path | Out-Null
 }
 
+function Build-CollisionVoxel {
+    param(
+        [string]$SourcePath,
+        [string]$CollisionJsonPath,
+        [string]$BaseName,
+        [string]$SourceLabel
+    )
+
+    $sourceCountM = Get-GaussianCountM $SourcePath
+    Write-Host "[4/4] voxel collision -> $CollisionJsonPath"
+    Write-Host ("      source={0} ({1}M gaussians)" -f $SourceLabel, $sourceCountM)
+    Write-Host "      params=$VoxelParams seed=$CollisionSeedPos floor-fill=$VoxelFloorFill"
+    Write-Host '      (slow step - splat-transform progress streams below; often 10-45 min on large splats)'
+    Write-BatchLog ("  {0} collision start: source={1} ({2}M), voxel={3}" -f $BaseName, $SourceLabel, $sourceCountM, $VoxelParams)
+
+    $voxelArgs = @(
+        "-w", $SourcePath,
+        "--voxel-params", $VoxelParams,
+        "--seed-pos", $CollisionSeedPos
+    )
+
+    if ($VoxelFloorFill -and $VoxelFloorFill -ne "none" -and $VoxelFloorFill -ne "0") {
+        $voxelArgs += @("--voxel-floor-fill", $VoxelFloorFill)
+    }
+
+    if ($CollisionMesh) {
+        $voxelArgs += @("-K", $CollisionMesh)
+    }
+
+    $voxelArgs += $CollisionJsonPath
+
+    try {
+        Invoke-SplatTransform -SplatCliArgs $voxelArgs -StreamProgress
+    } catch {
+        $msg = $_.Exception.Message
+        Write-BatchLog "  WARNING $BaseName : collision voxel failed - $msg"
+        Write-Host "      WARNING: collision voxel failed (LOD bundle is still valid)"
+        if ($CollisionStrict) { throw }
+        return $false
+    }
+
+    $binPath = $CollisionJsonPath -replace '\.voxel\.json$', '.voxel.bin'
+    if (-not (Test-Path $CollisionJsonPath)) {
+        Write-BatchLog "  WARNING $BaseName : missing $CollisionJsonPath after voxel step"
+        if ($CollisionStrict) { throw "collision output missing: $CollisionJsonPath" }
+        return $false
+    }
+    if (-not (Test-Path $binPath)) {
+        Write-BatchLog "  WARNING $BaseName : missing $binPath after voxel step"
+        if ($CollisionStrict) { throw "collision output missing: $binPath" }
+        return $false
+    }
+
+    Write-BatchLog "  $BaseName collision voxel -> $CollisionJsonPath"
+    return $true
+}
+
 Ensure-Dir (Join-Path $RepoRoot "work")
 $rotationLog = if ($SplatRotation) { $SplatRotation } else { "none" }
-Write-BatchLog "=== batch-lod-from-temp start (outlier>${PositionOutlierThresholdM}m -> box +/-${PositionBoxHalfExtentM}m, rotation=$rotationLog) ==="
+$collisionLog = if ($CollisionEnabled) {
+    "on (source=$CollisionSourceMode, voxel=$VoxelParams, floor=$VoxelFloorFill)"
+} else {
+    "skip"
+}
+Write-BatchLog "=== batch-lod-from-temp start (outlier>${PositionOutlierThresholdM}m -> box +/-${PositionBoxHalfExtentM}m, rotation=$rotationLog, collision=$collisionLog) ==="
 
 $inputs = Get-ChildItem -Path $TempDir -File |
     Where-Object { $_.Extension -match '^\.(ksplat|splat|ply)$' } |
@@ -228,7 +328,7 @@ foreach ($input in $inputs) {
         $step++
         $prev = $lodFiles[-1]
         $next = Join-Path $lodDir "lod$step.ply"
-        Write-Host "[2/3] decimate -> lod$step.ply"
+        Write-Host "[2/4] decimate -> lod$step.ply"
         Invoke-SplatTransform -SplatCliArgs @("-w", $prev, "--decimate", "50%", $next)
         $lodFiles += $next
         $countM = Get-GaussianCountM $next
@@ -244,9 +344,27 @@ foreach ($input in $inputs) {
     }
     $transformArgs += $manifest
 
-    Write-Host "[3/3] bundle streamed LOD -> $manifest"
+    Write-Host "[3/4] bundle streamed LOD -> $manifest"
     Write-Host "      levels: $($lodFiles.Count) (lod0..lod$($lodFiles.Count - 1))"
     Invoke-SplatTransform -SplatCliArgs $transformArgs
+
+    if ($CollisionEnabled) {
+        $collisionJson = Join-Path $outDir "collision.voxel.json"
+        $collisionSource = if ($CollisionSourceMode -eq "lod0" -or $CollisionSourceMode -eq "fine") {
+            $lod0
+        } else {
+            $lodFiles[-1]
+        }
+        $collisionSourceLabel = [System.IO.Path]::GetFileName($collisionSource)
+        $null = Build-CollisionVoxel `
+            -SourcePath $collisionSource `
+            -CollisionJsonPath $collisionJson `
+            -BaseName $base `
+            -SourceLabel $collisionSourceLabel
+    } else {
+        Write-Host "[4/4] collision voxel skipped (SPLAT_COLLISION=skip)"
+        Write-BatchLog "  $base collision skipped (SPLAT_COLLISION)"
+    }
 
     Write-BatchLog "Done $base -> $outDir"
     Write-Host "Done: $outDir"

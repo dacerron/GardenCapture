@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import * as THREE from "three";
 import { ThreeApp } from "@soil/shared/three/ThreeApp";
 import type { ControlMode } from "@soil/shared/three/ScreenSpace";
@@ -9,7 +9,15 @@ import type { MarkerInput } from "@soil/shared/three/WorldMarkers";
 import { getField, listFields, updateField } from "./adminApi";
 import type { Field as AdminField, MarkerPayload } from "./adminApi";
 import { normalizeMarkerLabel, type MarkerLabel } from "@soil/shared/types/markerLabel";
+import type { Pin } from "@soil/shared/types/fields";
+import {
+  fieldToEditorPin,
+  getFieldPlayCanvasSplatUrl,
+  pinHasPlayCanvasAsset,
+  resolveLegacyEditorSceneUrl,
+} from "@soil/shared/utils/splatUrls";
 import "@soil/shared/styles.css";
+import { ScrubAxisInput } from "./ScrubAxisInput";
 
 const PLACEMENT_DISTANCE_DEFAULT = 1;
 
@@ -29,13 +37,6 @@ type EditorMarker = {
   radius?: number;
   label?: MarkerLabel;
   icon?: string;
-};
-
-type Pin = {
-  title: string;
-  path: string;
-  start_pos?: unknown;
-  markers?: unknown[];
 };
 
 function parseStartPos(raw: unknown): [number, number, number] | null {
@@ -457,7 +458,7 @@ export default function Editor() {
         const nextSelectedIndex = null;
         setSelectedMarkerIndex(nextSelectedIndex);
         if (!gaussianPathParam) {
-          const filePath = field.File?.trim();
+          const filePath = resolveLegacyEditorSceneUrl(field);
           if (filePath) {
             const resolved =
               filePath.startsWith("/") || /^(https?:|blob:|data:)/i.test(filePath)
@@ -584,13 +585,14 @@ export default function Editor() {
     if (pins.length === 0) return;
     if (gaussianPathParam) return;
     const pin = pins[selectedPinIndex];
-    if (!pin?.path) return;
+    const legacyPath = pin?.path?.trim() ?? "";
+    if (!legacyPath) return;
     const resolved =
-      pin.path.startsWith("/") || /^(https?:|blob:|data:)/i.test(pin.path)
-        ? pin.path.startsWith("/")
-          ? new URL(pin.path, window.location.origin).href
-          : pin.path
-        : new URL(pin.path, window.location.href).href;
+      legacyPath.startsWith("/") || /^(https?:|blob:|data:)/i.test(legacyPath)
+        ? legacyPath.startsWith("/")
+          ? new URL(legacyPath, window.location.origin).href
+          : legacyPath
+        : new URL(legacyPath, window.location.href).href;
     setAxisStartPos(parseStartPos(pin.start_pos));
     const rawMarkers = pin.markers ?? [];
     const nextMarkers = rawMarkers.some(Array.isArray)
@@ -605,12 +607,7 @@ export default function Editor() {
   useEffect(() => {
     listFields()
       .then((data) => {
-        const next: Pin[] = data.items.map((field) => ({
-          title: field.Name || field.FieldID,
-          path: field.File ?? "",
-          start_pos: field.start_pos,
-          markers: Array.isArray(field.markers) ? field.markers : [],
-        }));
+        const next: Pin[] = data.items.map((field) => fieldToEditorPin(field));
         setPins(next);
         if (next.length > 0 && !searchParams.get("gaussianPath") && !searchParams.get("path")) {
           setSelectedPinIndex(0);
@@ -683,6 +680,50 @@ export default function Editor() {
     });
   };
 
+  const setPositionAxisValue = useCallback(
+    (axisIndex: number, value: number) => {
+      const roundedValue = roundCoordinate(value);
+      setPositionDrafts((prev) => {
+        const next = [...prev] as [string, string, string];
+        next[axisIndex] = formatCoordinateForInput(roundedValue);
+        return next;
+      });
+      if (selectedMarkerIndex === null) return;
+      setMarkers((prev) => {
+        const next = [...prev];
+        const marker = next[selectedMarkerIndex];
+        if (!marker) return prev;
+        const position = [...marker.position] as [number, number, number];
+        position[axisIndex] = roundedValue;
+        next[selectedMarkerIndex] = { ...marker, position };
+        return next;
+      });
+    },
+    [selectedMarkerIndex],
+  );
+
+  const setViewPositionAxisValue = useCallback(
+    (axisIndex: number, value: number) => {
+      const roundedValue = roundCoordinate(value);
+      setViewPositionDrafts((prev) => {
+        const next = [...prev] as [string, string, string];
+        next[axisIndex] = formatCoordinateForInput(roundedValue);
+        return next;
+      });
+      if (selectedMarkerIndex === null) return;
+      setMarkers((prev) => {
+        const marker = prev[selectedMarkerIndex];
+        if (!marker) return prev;
+        const next = [...prev];
+        const viewPosition = [...marker.viewPosition] as [number, number, number];
+        viewPosition[axisIndex] = roundedValue;
+        next[selectedMarkerIndex] = { ...marker, viewPosition };
+        return next;
+      });
+    },
+    [selectedMarkerIndex],
+  );
+
   const commitPositionDraft = (axisIndex: number) => {
     if (selectedMarkerIndex === null) return;
 
@@ -714,10 +755,6 @@ export default function Editor() {
       next[axisIndex] = formatCoordinateForInput(roundedValue);
       return next;
     });
-  };
-
-  const handlePositionDraftBlur = (axisIndex: number) => {
-    commitPositionDraft(axisIndex);
   };
 
   const handleViewPositionDraftChange = (axisIndex: number, value: string) => {
@@ -828,7 +865,21 @@ export default function Editor() {
                 <>
                   <strong>{managedField?.Name || "Untitled Field"}</strong>
                   <span>FieldID: {fieldId}</span>
-                  <span>Scene: {gaussianPathParam || managedField?.File || "No scene path"}</span>
+                  <span>
+                    Legacy scene:{" "}
+                    {gaussianPathParam || resolveLegacyEditorSceneUrl(managedField ?? {}) || "No legacy File URL"}
+                  </span>
+                  <span>
+                    PlayCanvas:{" "}
+                    {getFieldPlayCanvasSplatUrl(managedField ?? {}) ||
+                      "Missing FilePlayCanvas (required for PlayCanvas editor)"}
+                    {managedField?.FileFormat ? ` (${managedField.FileFormat})` : ""}
+                  </span>
+                  <Link
+                    to={`/editor?fieldId=${encodeURIComponent(fieldId)}&controlMode=fly`}
+                  >
+                    PlayCanvas editor
+                  </Link>
                 </>
               ) : (
                 <>
@@ -838,6 +889,7 @@ export default function Editor() {
                       {pins.map((pin, i) => (
                         <option key={i} value={i}>
                           {pin.title || `Location ${i + 1}`}
+                          {pinHasPlayCanvasAsset(pin) ? "" : " (no PlayCanvas URL)"}
                         </option>
                       ))}
                     </select>
@@ -1089,23 +1141,14 @@ export default function Editor() {
                     </label>
                     <div className="markerPositionGrid">
                       {(["x", "y", "z"] as const).map((axis, index) => (
-                        <label key={axis}>
-                          <span>{axis.toUpperCase()}</span>
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            step={0.01}
-                            value={positionDrafts[index]}
-                            onChange={(e) => handlePositionDraftChange(index, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                commitPositionDraft(index);
-                                e.currentTarget.blur();
-                              }
-                            }}
-                            onBlur={() => handlePositionDraftBlur(index)}
-                          />
-                        </label>
+                        <ScrubAxisInput
+                          key={axis}
+                          axis={axis}
+                          value={positionDrafts[index]}
+                          onChange={(value) => handlePositionDraftChange(index, value)}
+                          onScrubValue={(value) => setPositionAxisValue(index, value)}
+                          onCommit={() => commitPositionDraft(index)}
+                        />
                       ))}
                     </div>
                     <label>
@@ -1113,23 +1156,14 @@ export default function Editor() {
                     </label>
                     <div className="markerPositionGrid">
                       {(["x", "y", "z"] as const).map((axis, index) => (
-                        <label key={axis}>
-                          <span>{axis.toUpperCase()}</span>
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            step={0.01}
-                            value={viewPositionDrafts[index]}
-                            onChange={(e) => handleViewPositionDraftChange(index, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                commitViewPositionDraft(index);
-                                e.currentTarget.blur();
-                              }
-                            }}
-                            onBlur={() => commitViewPositionDraft(index)}
-                          />
-                        </label>
+                        <ScrubAxisInput
+                          key={axis}
+                          axis={axis}
+                          value={viewPositionDrafts[index]}
+                          onChange={(value) => handleViewPositionDraftChange(index, value)}
+                          onScrubValue={(value) => setViewPositionAxisValue(index, value)}
+                          onCommit={() => commitViewPositionDraft(index)}
+                        />
                       ))}
                     </div>
                     <button

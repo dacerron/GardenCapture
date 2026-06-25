@@ -50,10 +50,10 @@ During PlayCanvas migration:
 
 | | Today (production) | Target |
 |--|-------------------|--------|
-| Viewer / editor renderer | Three.js + mkkellogg | PlayCanvas Engine |
-| Splat format | `.ksplat` on assets CDN | Streamed LOD (`lod-meta.json` + chunks) |
-| DynamoDB `File` | Legacy `.ksplat` URL | PlayCanvas URL at cutover (Phase 7) |
-| DynamoDB `FilePlayCanvas` | Populated for migrated fields | All fields; engine reads this in Phase 2+ |
+| Viewer / editor renderer | PlayCanvas Engine (viewer + editor) | PlayCanvas Engine |
+| Splat format | Streamed LOD (`lod-meta.json` + chunks) | Streamed LOD |
+| DynamoDB `File` | Legacy `.ksplat` URL (legacy viewer only) | PlayCanvas URL at cutover (Phase 7) |
+| DynamoDB `FilePlayCanvas` | Populated for migrated fields | All fields; default viewer reads this |
 
 ### Done so far
 
@@ -62,21 +62,28 @@ During PlayCanvas migration:
 - **Assets on CDN** — production splats converted to streamed LOD and uploaded to the assets bucket (alongside existing `.ksplat` files)
 - **DynamoDB** — `FilePlayCanvas` and `FileFormat` added on field records (e.g. `streamed-lod` manifest URL)
 - **API (code)** — Lambda `/pins` exposes `FilePlayCanvas` / `FileFormat`; `/fields` and `/fields/{id}` pass them through from DynamoDB ([`lambda-handler.mjs`](lambda-handler.mjs) + lab repo `lambda/handler.mjs`)
-- **App types** — `Field`, `Pin`, and `publicApi.ts` updated to carry PlayCanvas fields (viewer still loads `path` / `.ksplat` until Phase 5)
-- **Smoke harness** — dev route `/viewer-pc/` loads `FilePlayCanvas` streamed LOD via `@playcanvas/engine` ([`apps/viewer/src/PlayCanvasSmoke.tsx`](apps/viewer/src/PlayCanvasSmoke.tsx))
+- **App types** — `Field`, `Pin`, and `publicApi.ts` updated to carry PlayCanvas fields
+- **PlayCanvas viewer** — `/viewer/` loads `FilePlayCanvas` via `@soil/playcanvas-viewer` ([`apps/viewer/src/PlayCanvasViewer.tsx`](apps/viewer/src/PlayCanvasViewer.tsx))
+- **Dev harness** — `/viewer-pc-dev/` field picker + local `?url=` testing ([`apps/viewer/src/PlayCanvasSmoke.tsx`](apps/viewer/src/PlayCanvasSmoke.tsx))
+- **Viewer cutover (Phase 5)** — `/viewer/?m=` is PlayCanvas by default; `?renderer=legacy` for Three.js fallback; `/viewer-pc/` redirects to `/viewer/`
+- **Editor cutover (Phase 6.8)** — `/editor?fieldId=` is PlayCanvas by default; `?renderer=legacy` for Three.js fallback
 
-### PlayCanvas smoke harness (local)
+### PlayCanvas viewer
 
 1. Ensure repo root `.env` has `VITE_PUBLIC_API_URL` (same as legacy viewer).
-2. `npm install` then `npm run dev:viewer` → open **http://localhost:5173/viewer-pc/**
-3. Pick a field from the dropdown (reads `FilePlayCanvas` from `/fields`), or pass a manifest directly:
-   - `http://localhost:5173/viewer-pc/?m={FieldID}`
-   - `http://localhost:5173/viewer-pc/?url=https://{assets_cdn}/splats/lod/{basename}/lod-meta.json`
-   - **Local LOD bundle** (dev server only): `http://localhost:5173/viewer-pc/?url=/work-out/{basename}/lod-meta.json`
-     Example: `http://localhost:5173/viewer-pc/?url=/work-out/UBC_Farm_Agricultural/lod-meta.json`
-     Requires `work/out/{basename}/lod-meta.json` from the conversion script; served by Vite at `/work-out/` (no upload, no CORS).
-4. Compare side-by-side with legacy: `http://localhost:5173/viewer/?m={FieldID}` (`.ksplat` via `File`).
-5. **Orientation:** batch conversion applies `-r 180,0,0` by default (legacy viewer applies the same flip at load). Already-uploaded LOD without that fix: `?orientation=180` on `/viewer-pc/`.
+2. `npm install` then `npm run dev:viewer`
+3. **Production route:** **http://localhost:5173/viewer/?m={FieldID}**
+4. **Dev harness** (field picker, local bundles): **http://localhost:5173/viewer-pc-dev/**
+5. **Local LOD bundle** (dev server only): `http://localhost:5173/viewer/?url=/work-out/{basename}/lod-meta.json`
+6. **Legacy fallback:** `http://localhost:5173/viewer/?m={FieldID}&renderer=legacy`
+7. **Orientation:** viewer applies **180° X by default** (matches legacy mkkellogg flip). Override with `?orientation=0` for raw LOD testing.
+8. **Markers:** loaded from the same `/fields/{id}` API as legacy viewer; sidebar list + 3D hotspots (click hotspot for title/description tooltip).
+
+### PlayCanvas editor
+
+1. `npm run dev:admin` → **http://localhost:5174/editor?fieldId={FieldID}**
+2. **Legacy fallback:** `http://localhost:5174/editor?fieldId={FieldID}&renderer=legacy`
+3. Requires `FilePlayCanvas` on the field (streamed LOD). Fields missing it show an error with a link to the legacy editor.
 
 **Batch conversion** runs PlayCanvas-safe cleanup automatically (invalid scales + distant position outliers). See [`scripts/splat/README.md`](scripts/splat/README.md).
 
@@ -92,10 +99,12 @@ During PlayCanvas migration:
 
 ### Next up (Phase 2+)
 
-- [ ] **`packages/playcanvas-viewer`** — extract harness into `PlayCanvasApp` wrapper (`loadScene`, camera, dispose)
-- [ ] **Markers** — map DynamoDB markers → engine hotspots / annotations (Phase 3)
-- [ ] **Viewer cutover** — replace default viewer + inline map viewer (Phase 5)
-- [ ] **Editor on PlayCanvas** — admin marker placement (Phase 6)
+- [x] **`packages/playcanvas-viewer`** — `createPlayCanvasApp` wrapper (`loadScene`, camera, dispose)
+- [x] **Parallel `/viewer-pc` route** — now redirects to `/viewer/` (bookmark compatibility)
+- [x] **Markers (Phase 3)** — DynamoDB markers → PlayCanvas annotations + sidebar fly-to
+- [x] **Viewer cutover (Phase 5)** — `/viewer/` default PlayCanvas; `?renderer=legacy` fallback
+- [x] **Editor cutover (Phase 6.8)** — `/editor` default PlayCanvas; `?renderer=legacy` fallback
+- [ ] **Deploy viewer + admin** to CloudFront and QA all fields on mobile
 - [ ] **Retire mkkellogg** — remove Three.js splat stack and `.ksplat` URLs (Phase 7)
 
 **Checklist:** [`docs/PLAYCANVAS-PHASE-0-1-TODOS.md`](docs/PLAYCANVAS-PHASE-0-1-TODOS.md)

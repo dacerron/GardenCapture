@@ -8,6 +8,7 @@
     "./styles.css": "./src/styles.css",
     "./types/*": "./src/types/*",
     "./utils/*": "./src/utils/*",
-    "./three/*": "./src/three/*"
+    "./three/*": "./src/three/*",
+    "./markers/*": "./src/markers/*"
   }
 }

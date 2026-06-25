@@ -11,7 +11,9 @@
     "baseUrl": ".",
     "paths": {
       "@soil/shared": ["packages/shared/src/index.ts"],
-      "@soil/shared/*": ["packages/shared/src/*"]
+      "@soil/shared/*": ["packages/shared/src/*"],
+      "@soil/playcanvas-viewer": ["packages/playcanvas-viewer/src/index.ts"],
+      "@soil/playcanvas-viewer/*": ["packages/playcanvas-viewer/src/*"]
     }
   }
 }

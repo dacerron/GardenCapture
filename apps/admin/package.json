@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@mkkellogg/gaussian-splats-3d": "^0.4.7",
+    "@soil/playcanvas-viewer": "file:../../packages/playcanvas-viewer",
     "@soil/shared": "file:../../packages/shared",
     "aws-amplify": "^6.16.0",
     "react": "^19.1.1",

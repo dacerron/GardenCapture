@@ -89,6 +89,407 @@ input {
   height: 100%;
 }
 
+.playCanvasWrap {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  background: #0a0a0a;
+  overflow: hidden;
+}
+
+.playCanvasSurface {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.playCanvasHeader {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 20;
+  max-width: min(420px, calc(100% - 8rem));
+  padding: 0.75rem 0.95rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(8px);
+  color: #f3f4f6;
+  pointer-events: none;
+}
+
+.playCanvasHeader h1 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.playCanvasHeader p {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.85;
+  line-height: 1.35;
+}
+
+.playCanvasControls {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.55rem;
+}
+
+.playCanvasControlMode {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(228, 228, 232, 0.92);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+
+.playCanvasControlModeLabel {
+  padding: 0 0.2rem 0 0.15rem;
+  color: #1f1f1f;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.playCanvasControlModeBtn {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.45);
+  color: #1f1f1f;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.playCanvasControlModeBtn.isActive {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.playCanvasPerfControl {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(228, 228, 232, 0.92);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+
+.playCanvasPerfLabel {
+  padding: 0 0.1rem 0 0.15rem;
+  color: #1f1f1f;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.playCanvasPerfSelect {
+  min-width: 6.5rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1f1f1f;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.playCanvasLoadingShell {
+  position: fixed;
+  inset: 0;
+  min-height: 100%;
+  background: #05070c;
+}
+
+.playCanvasLoadingOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(
+    circle at 35% 25%,
+    rgba(59, 130, 246, 0.2),
+    rgba(7, 10, 16, 0.97) 45%,
+    rgba(0, 0, 0, 0.98)
+  );
+  pointer-events: auto;
+}
+
+.playCanvasLoadingCard {
+  width: min(540px, 86%);
+  border-radius: 14px;
+  background: rgba(17, 24, 39, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 26px 24px 22px;
+  gap: 12px;
+}
+
+.playCanvasLoadingSpinner {
+  width: 46px;
+  height: 46px;
+  border: 3px solid rgba(148, 163, 184, 0.35);
+  border-top-color: #cbd5e1;
+  border-radius: 50%;
+  animation: playCanvasLoadingSpin 1s linear infinite;
+}
+
+.playCanvasLoadingTitle {
+  margin-top: 6px;
+  color: #f8fafc;
+  font-size: 18px;
+  letter-spacing: 0.3px;
+  font-weight: 600;
+}
+
+.playCanvasLoadingHint {
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 13px;
+  letter-spacing: 0.2px;
+  min-height: 18px;
+  text-align: center;
+}
+
+.playCanvasLoadingProgressTrack {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.38);
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.playCanvasLoadingProgressFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7dd3fc, #60a5fa, #22d3ee);
+  transition: width 140ms ease;
+}
+
+.playCanvasLoadingProgressFill.isIndeterminate {
+  width: 42%;
+  opacity: 0.6;
+  animation: playCanvasLoadingPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes playCanvasLoadingSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes playCanvasLoadingPulse {
+  0% {
+    filter: brightness(0.85);
+  }
+  50% {
+    filter: brightness(1.2);
+  }
+  100% {
+    filter: brightness(0.85);
+  }
+}
+
+.playCanvasMarkerSidebar {
+  position: absolute;
+  top: 5rem;
+  left: 1rem;
+  z-index: 25;
+  max-height: calc(100% - 6rem);
+  overflow: auto;
+}
+
+.playCanvasMobileTopBar {
+  display: none;
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  z-index: 35;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.playCanvasMobileRoundBtn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(9, 8, 5, 0.72);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  color: #fff;
+  pointer-events: auto;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.playCanvasMobileRoundBtn svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.playCanvasMobileTopBarActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.playCanvasMobilePlaceCard {
+  display: none;
+  position: absolute;
+  top: calc(max(8px, env(safe-area-inset-top)) + 58px);
+  right: 12px;
+  z-index: 34;
+  width: min(330px, calc(100% - 48px));
+  max-height: min(46vh, 420px);
+  overflow: auto;
+  padding: 13px 18px 16px;
+  border-radius: 18px;
+  background: rgba(9, 8, 5, 0.68);
+  color: #fff;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+}
+
+.playCanvasMobilePlaceHandle {
+  width: 64px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.36);
+  margin: 0 auto 12px;
+}
+
+.playCanvasMobilePlaceTitle {
+  margin: 0 0 10px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.playCanvasMobilePlaceLocation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.95rem;
+}
+
+.playCanvasMobilePlaceLocation svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: #1fb6a6;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.playCanvasMobilePlaceDescription {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.playCanvasMobileQuality {
+  display: none;
+  position: absolute;
+  left: 12px;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 34;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 14px;
+  background: rgba(9, 8, 5, 0.72);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+}
+
+.playCanvasMobileQualityBtn {
+  min-width: 3.4rem;
+  padding: 0.5rem 0.55rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.playCanvasMobileQualityBtn.isActive {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+@media (pointer: coarse) {
+  .playCanvasHeaderDesktop,
+  .playCanvasControls {
+    display: none !important;
+  }
+
+  .playCanvasMobileTopBar {
+    display: flex;
+  }
+
+  .playCanvasMobileQuality {
+    display: flex;
+  }
+
+  .playCanvasMarkerSidebar {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .playCanvasMarkerSidebar {
+    display: none;
+  }
+}
+
 .viewerSidebarPanel {
   width: min(290px, calc(100% - 5rem));
   height: 100%;
@@ -416,6 +817,10 @@ input {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.markerModeTabs--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .markerModeTabs button {
   min-height: 2.15rem;
   border: 0;
@@ -462,8 +867,9 @@ input {
   width: 100%;
   min-width: 0;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.65rem;
   padding: 0.72rem 0.8rem;
   border: 1px solid rgba(142, 164, 198, 0.16);
   border-radius: 7px;
@@ -471,6 +877,17 @@ input {
   color: #e5edf9;
   cursor: pointer;
   text-align: left;
+}
+
+.markerList button:has(img) {
+  justify-content: flex-start;
+}
+
+.markerList img {
+  flex-shrink: 0;
+  width: 1.55rem;
+  height: 1.55rem;
+  object-fit: contain;
 }
 
 .markerList button.active {
@@ -591,6 +1008,10 @@ input {
   background: rgba(255, 255, 255, 0.07);
 }
 
+.markerEditorSection .markerModeTabs + .markerSubtleButton {
+  margin-top: 0.65rem;
+}
+
 .markerDangerButton {
   margin-top: 0.45rem;
   border: 1px solid rgba(230, 67, 88, 0.55);
@@ -609,6 +1030,38 @@ input {
   align-items: stretch;
   gap: 0.32rem;
   font-size: 0.78rem;
+}
+
+.scrubAxisInput {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.32rem;
+  min-width: 0;
+}
+
+.scrubAxisInput-label {
+  color: #afbed5;
+  font-size: 0.78rem;
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.scrubAxisInput-value {
+  width: 100%;
+  box-sizing: border-box;
+  cursor: ew-resize;
+}
+
+.scrubAxisInput-value:focus {
+  cursor: text;
+}
+
+body.is-axis-scrubbing,
+body.is-axis-scrubbing * {
+  cursor: ew-resize !important;
+  user-select: none !important;
 }
 
 .markerEditorStatus {

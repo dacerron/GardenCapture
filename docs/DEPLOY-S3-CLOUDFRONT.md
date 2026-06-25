@@ -266,19 +266,27 @@ job deploy-admin:
 
 ---
 
-## Post-deploy smoke test
+### Post-deploy smoke test
 
 ### Viewer CloudFront URL
 
 1. Open `https://VIEWER_DOMAIN/viewer/?m=KNOWN_FIELD_ID`.
-2. Confirm splat loads (check Network: splat URL returns 200 from assets bucket).
-3. Confirm `GET {api}/pins` succeeds (no Cognito).
+2. Confirm PlayCanvas splat loads (Network: `lod-meta.json` and LOD chunks return 200 from assets CDN).
+3. Confirm markers appear and fly-to works from the sidebar.
+4. Optional legacy check: same URL with `&renderer=legacy` loads `.ksplat` via Three.js.
+5. Confirm `GET {api}/pins` succeeds (no Cognito).
+6. Bookmark alias: `/viewer-pc/?m=…` redirects to `/viewer/?m=…`.
 
 ### Admin CloudFront URL
 
 1. Open `https://ADMIN_DOMAIN/` → redirect to Cognito → return logged in.
 2. List fields in Admin UI (`GET {api}/admin/api/fields` with Bearer token).
-3. Open `/editor` for a field; confirm scene load and marker save.
+3. Open **Manage markers** for a field with `FilePlayCanvas` → `/editor?fieldId=…` loads PlayCanvas LOD (`lod-meta.json` + chunks).
+4. **Place mode:** set placement distance, icon, title → place marker → **Set View Position** → save.
+5. **Edit mode:** select marker → drag RGB gizmo or edit coordinates → save.
+6. **Start position:** drag the large scene axes → save → open public viewer and confirm orbit pivot / reset camera.
+7. Reload editor → markers and `start_pos` persist; open `/viewer/?m={FieldID}` and confirm no coordinate drift.
+8. Optional legacy check: same field with `&renderer=legacy` loads `.ksplat` via Three.js editor.
 
 ### Cognito
 
