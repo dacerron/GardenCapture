@@ -67,6 +67,7 @@ export async function getPins(): Promise<Pin[]> {
         typeof pin.FilePlayCanvas === "string" ? pin.FilePlayCanvas : undefined,
       FileFormat: typeof pin.FileFormat === "string" ? pin.FileFormat : undefined,
       start_pos: pin.start_pos,
+      start_view_position: pin.start_view_position,
       markers: Array.isArray(pin.markers) ? pin.markers : [],
     };
   });

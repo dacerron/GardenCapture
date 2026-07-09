@@ -19,6 +19,13 @@ export function cameraFramingFromStartPos(
   };
 }
 
+export function deriveStartViewPosition(
+  startPos: [number, number, number] = DEFAULT_START_POS,
+): [number, number, number] {
+  return cameraFramingFromStartPos(startPos).position;
+}
+
+/** Parses `start_pos` or `start_view_position` ({ x, y, z } or [x, y, z]). */
 export function parseStartPos(raw: unknown): [number, number, number] | null {
   if (Array.isArray(raw) && raw.length >= 3) {
     const x = toNumberOrNull(raw[0]);
@@ -37,3 +44,5 @@ export function parseStartPos(raw: unknown): [number, number, number] | null {
 
   return null;
 }
+
+export const parseStartViewPosition = parseStartPos;

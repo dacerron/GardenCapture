@@ -13,7 +13,7 @@ import { setupEditorMarkerGizmo, type MarkerEditHandlers } from "./editorMarkerG
 import { GIZMO_AXIS_LENGTH, START_AXIS_LENGTH } from "./editorAxisVisual";
 import { setupEditorOverlayLayer } from "./editorOverlayLayer";
 import { setupPlayCanvasMarkers, type PlacementPreviewState } from "./setupAnnotations";
-import { setupPlayCanvasSkybox } from "./setupSkybox";
+import { setupPlayCanvasSkybox, SKYBOX_GROUND_COLOR } from "./setupSkybox";
 import type { ControlMode } from "@soil/shared/three/ScreenSpace";
 import type { PerformancePreset } from "@soil/shared/three/ScreenSpace";
 import {
@@ -23,6 +23,7 @@ import {
 } from "./performancePresets";
 import { DEFAULT_MARKER_RADIUS } from "@soil/shared/markers/editorMarkers";
 import { applySplatOrientationX } from "./applySplatOrientation";
+import { deriveStartViewPosition } from "@soil/shared/utils/startPos";
 import { resetCameraFromStartPos } from "./spawnCamera";
 import { mapLegacyStoredPosition } from "./sceneCoordinates";
 import { setupCameraHeightClamp } from "./heightmap/cameraHeightClamp";
@@ -49,10 +50,12 @@ export type PlayCanvasAppOptions = {
   splatUrl: string;
   /** Euler X rotation (degrees). Default 180 to align with legacy `/viewer/`. */
   orientationX?: number;
-  /** Global splat budget in millions. Ignored when `performancePreset` is set. */
+  /** Global splat budget in millions. When set (including `0`), overrides `performancePreset`. */
   splatBudgetM?: number;
   /** Quality preset; overrides `splatBudgetM` when provided. */
   performancePreset?: PerformancePreset;
+  /** When set, lock streamed LOD to this level (0 = finest). */
+  lockLodLevel?: number;
   /** DOM container for PlayCanvas annotation overlays (defaults to document.body). */
   markerOverlayParent?: HTMLElement;
   markers?: NavigableMarker[];
@@ -70,6 +73,8 @@ export type PlayCanvasAppOptions = {
   onLoadProgress?: (state: PlayCanvasLoadProgress) => void;
   /** Scene origin / orbit pivot (`start_pos` from DynamoDB). */
   startPos?: [number, number, number];
+  /** Opening / reset camera position (`start_view_position` from DynamoDB). */
+  startViewPosition?: [number, number, number] | null;
   showStartAxes?: boolean;
   /** Keep the camera above a precomputed ground heightmap when available. */
   groundClamp?: HeightmapGroundClampConfig;
@@ -94,6 +99,7 @@ export type PlayCanvasApp = {
   getCameraPosition: () => [number, number, number];
   setCameraInputEnabled: (enabled: boolean) => void;
   setStartAxesPosition: (position: [number, number, number]) => void;
+  setStartViewPosition: (position: [number, number, number]) => void;
   setStartAxesVisible: (visible: boolean) => void;
   setStartPosEditing: (handlers?: MarkerEditHandlers) => void;
   setStartPosInteractive: (interactive: boolean) => void;
@@ -117,6 +123,7 @@ export async function createPlayCanvasApp(
     orientationX = DEFAULT_ORIENTATION_X,
     splatBudgetM,
     performancePreset = getDefaultPerformancePreset(),
+    lockLodLevel,
     markerOverlayParent,
     markers = [],
     selectedMarkerIndex = null,
@@ -126,11 +133,15 @@ export async function createPlayCanvasApp(
     defaultControlMode = "orbit",
     onLoadProgress,
     startPos = [0, 0, 0],
+    startViewPosition = null,
     showStartAxes = false,
     groundClamp = {},
   } = options;
+  const budgetLocked = splatBudgetM !== undefined;
   const budgetM =
-    splatBudgetM ?? getSplatBudgetM(performancePreset);
+    splatBudgetM !== undefined
+      ? splatBudgetM
+      : getSplatBudgetM(performancePreset);
   const sceneFocus = new pc.Vec3();
   const sceneCameraPosition = new pc.Vec3();
 
@@ -201,17 +212,17 @@ export async function createPlayCanvasApp(
 
   app.start();
 
-  const skyboxHandle = setupPlayCanvasSkybox(app, skyboxUrl);
-
   const camera = new pc.Entity("camera");
   camera.addComponent("camera", {
-    clearColor: new pc.Color(0.055, 0.067, 0.086),
+    clearColor: SKYBOX_GROUND_COLOR.clone(),
     fov: 75,
     toneMapping: pc.TONEMAP_LINEAR,
   });
   camera.setPosition(DEFAULT_CAMERA_POSITION);
   app.root.addChild(camera);
   camera.lookAt(DEFAULT_FOCUS_POINT);
+
+  const skyboxHandle = setupPlayCanvasSkybox(app, camera, skyboxUrl);
 
   camera.addComponent("script");
   const controls = camera.script?.create(CameraControls) as InstanceType<
@@ -243,6 +254,11 @@ export async function createPlayCanvasApp(
   const resource = gsplat?.resource as { octree?: { lodLevels?: number } } | undefined;
   const lodLevels = resource?.octree?.lodLevels;
 
+  const applyLodRange = (min: number, max: number) => {
+    app.scene.gsplat.lodRangeMin = min;
+    app.scene.gsplat.lodRangeMax = max;
+  };
+
   const waitForInteractive = new Promise<void>((resolve) => {
     if (!lodLevels) {
       resolve();
@@ -250,8 +266,9 @@ export async function createPlayCanvasApp(
     }
 
     const worstLod = lodLevels - 1;
-    app.scene.gsplat.lodRangeMin = worstLod;
-    app.scene.gsplat.lodRangeMax = worstLod;
+    const targetMin = lockLodLevel ?? worstLod;
+    const targetMax = lockLodLevel ?? worstLod;
+    applyLodRange(targetMin, targetMax);
 
     const gsplatSystem = app.systems.gsplat as pc.GSplatComponentSystem & {
       on: (name: string, fn: (...args: unknown[]) => void) => void;
@@ -266,6 +283,11 @@ export async function createPlayCanvasApp(
       settled = true;
       gsplatSystem.off("frame:ready", onFrameReady);
       clearTimeout(timeoutId);
+      if (lockLodLevel !== undefined) {
+        applyLodRange(lockLodLevel, lockLodLevel);
+      } else {
+        applyLodRange(0, worstLod);
+      }
       resolve();
     };
 
@@ -276,8 +298,6 @@ export async function createPlayCanvasApp(
       loadingCount: number,
     ) => {
       if (ready && loadingCount === 0) {
-        app.scene.gsplat.lodRangeMin = 0;
-        app.scene.gsplat.lodRangeMax = worstLod;
         finish();
       }
     };
@@ -325,6 +345,8 @@ export async function createPlayCanvasApp(
     cameraEntity: camera,
     controls: controls ?? null,
     startPos,
+    startViewPosition:
+      startViewPosition ?? deriveStartViewPosition(startPos),
     splatEntity,
     sceneFocus,
     sceneCameraPosition,
@@ -350,6 +372,9 @@ export async function createPlayCanvasApp(
       })
     : null;
   let currentStartPos: [number, number, number] = [...startPos];
+  let currentStartViewPosition: [number, number, number] = [
+    ...(startViewPosition ?? deriveStartViewPosition(startPos)),
+  ];
   let startPosHandlers: MarkerEditHandlers = {};
   let startPosInteractive = true;
 
@@ -383,6 +408,7 @@ export async function createPlayCanvasApp(
       cameraEntity: camera,
       controls: controls ?? null,
       startPos: currentStartPos,
+      startViewPosition: currentStartViewPosition,
       splatEntity,
       sceneFocus,
       sceneCameraPosition,
@@ -415,6 +441,7 @@ export async function createPlayCanvasApp(
       applyCameraControlMode(controls ?? null, mode);
     },
     setPerformancePreset(preset: PerformancePreset) {
+      if (budgetLocked) return;
       applyPerformancePreset(app, preset);
     },
     setMarkers(nextMarkers, options) {
@@ -446,6 +473,9 @@ export async function createPlayCanvasApp(
     },
     setStartAxesPosition(position) {
       setStartAxesPosition(position);
+    },
+    setStartViewPosition(position) {
+      currentStartViewPosition = [...position];
     },
     setStartAxesVisible(visible) {
       if (!startPosGizmoHandle) return;

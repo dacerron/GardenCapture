@@ -26,7 +26,12 @@ import type { ControlMode, SceneInfo } from "@soil/shared/three/ScreenSpace";
 import type { Field } from "@soil/shared/types/fields";
 import { normalizeMarkerLabel } from "@soil/shared/types/markerLabel";
 import { normalizeFieldItem } from "@soil/shared/utils/fields";
-import { DEFAULT_START_POS, parseStartPos } from "@soil/shared/utils/startPos";
+import {
+  DEFAULT_START_POS,
+  deriveStartViewPosition,
+  parseStartPos,
+  parseStartViewPosition,
+} from "@soil/shared/utils/startPos";
 import {
   getFieldPlayCanvasSplatUrl,
   resolvePlayCanvasSceneUrl,
@@ -56,6 +61,7 @@ type LoadState =
       orientationX: number;
       field: Field | null;
       startPos: [number, number, number];
+      startViewPosition: [number, number, number];
     };
 
 const formatFieldLocation = (field: Field) => {
@@ -149,6 +155,15 @@ export default function PlayCanvasEditor() {
     useState<[number, number, number]>(DEFAULT_START_POS);
   const [savedStartPos, setSavedStartPos] =
     useState<[number, number, number]>(DEFAULT_START_POS);
+  const [startViewPosition, setStartViewPosition] = useState<[number, number, number]>(
+    deriveStartViewPosition(DEFAULT_START_POS),
+  );
+  const [savedStartViewPosition, setSavedStartViewPosition] = useState<
+    [number, number, number]
+  >(deriveStartViewPosition(DEFAULT_START_POS));
+  const [startViewPositionDrafts, setStartViewPositionDrafts] = useState<
+    [string, string, string]
+  >(["0.00", "0.00", "0.00"]);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [saveMessage, setSaveMessage] = useState("");
 
@@ -227,6 +242,14 @@ export default function PlayCanvasEditor() {
     },
     [],
   );
+
+  useEffect(() => {
+    setStartViewPositionDrafts([
+      formatCoordinateForInput(startViewPosition[0]),
+      formatCoordinateForInput(startViewPosition[1]),
+      formatCoordinateForInput(startViewPosition[2]),
+    ]);
+  }, [startViewPosition]);
 
   useEffect(() => {
     if (selectedMarkerIndex === null || !markers[selectedMarkerIndex]) {
@@ -437,6 +460,56 @@ export default function PlayCanvasEditor() {
     });
   };
 
+  const handleSetStartViewPosition = () => {
+    const viewPosition = getCurrentCameraPosition();
+    if (!viewPosition) return;
+    const rounded = viewPosition.map(roundCoordinate) as [number, number, number];
+    setStartViewPosition(rounded);
+    playCanvasAppRef.current?.setStartViewPosition(rounded);
+    notifyViewPositionSet();
+  };
+
+  const setStartViewPositionAxisValue = useCallback((axisIndex: number, value: number) => {
+    const rounded = roundCoordinate(value);
+    const formatted = formatCoordinateForInput(rounded);
+    setStartViewPositionDrafts((prev) => {
+      const next = [...prev] as [string, string, string];
+      next[axisIndex] = formatted;
+      return next;
+    });
+    setStartViewPosition((prev) => {
+      const next = [...prev] as [number, number, number];
+      next[axisIndex] = rounded;
+      playCanvasAppRef.current?.setStartViewPosition(next);
+      return next;
+    });
+  }, []);
+
+  const commitStartViewPositionDraft = (axisIndex: number) => {
+    const parsedValue = parseCoordinateDraft(startViewPositionDrafts[axisIndex]);
+    if (parsedValue === null) {
+      setStartViewPositionDrafts((prev) => {
+        const next = [...prev] as [string, string, string];
+        next[axisIndex] = formatCoordinateForInput(startViewPosition[axisIndex]);
+        return next;
+      });
+      return;
+    }
+
+    const roundedValue = roundCoordinate(parsedValue);
+    setStartViewPosition((prev) => {
+      const next = [...prev] as [number, number, number];
+      next[axisIndex] = roundedValue;
+      playCanvasAppRef.current?.setStartViewPosition(next);
+      return next;
+    });
+    setStartViewPositionDrafts((prev) => {
+      const next = [...prev] as [string, string, string];
+      next[axisIndex] = formatCoordinateForInput(roundedValue);
+      return next;
+    });
+  };
+
   const handleSetEditViewPosition = () => {
     const viewPosition = getCurrentCameraPosition();
     if (!viewPosition) return;
@@ -497,19 +570,32 @@ export default function PlayCanvasEditor() {
         y: roundCoordinate(nextStartPos[1]),
         z: roundCoordinate(nextStartPos[2]),
       };
+      const nextStartViewPosition = startViewPosition;
+      const startViewPositionPayload = {
+        x: roundCoordinate(nextStartViewPosition[0]),
+        y: roundCoordinate(nextStartViewPosition[1]),
+        z: roundCoordinate(nextStartViewPosition[2]),
+      };
       await updateField(fieldId, {
         markers: markerPayload,
         start_pos: startPosPayload,
+        start_view_position: startViewPositionPayload,
       });
 
       const refreshedField = await getField(fieldId);
       const persistedStartPos = parseStartPos(refreshedField?.start_pos) ?? nextStartPos;
+      const persistedStartViewPosition =
+        parseStartViewPosition(refreshedField?.start_view_position) ??
+        deriveStartViewPosition(persistedStartPos);
       const persistedMarkers = Array.isArray(refreshedField?.markers)
         ? backendMarkersToEditorMarkers(refreshedField.markers)
         : cloneEditorMarkers(markers);
 
       setAxisStartPos(persistedStartPos);
       setSavedStartPos(persistedStartPos);
+      setStartViewPosition(persistedStartViewPosition);
+      setSavedStartViewPosition(persistedStartViewPosition);
+      playCanvasAppRef.current?.setStartViewPosition(persistedStartViewPosition);
       setMarkers(cloneEditorMarkers(persistedMarkers));
       setSavedMarkers(cloneEditorMarkers(persistedMarkers));
       setSaveStatus("success");
@@ -518,11 +604,13 @@ export default function PlayCanvasEditor() {
       setSaveStatus("error");
       setSaveMessage(errorMessage(error) || "Failed to save.");
     }
-  }, [axisStartPos, fieldId, markers]);
+  }, [axisStartPos, fieldId, markers, startViewPosition]);
 
   const handleDiscardMarkers = () => {
     setMarkers(cloneEditorMarkers(savedMarkers));
     setAxisStartPos(savedStartPos);
+    setStartViewPosition(savedStartViewPosition);
+    playCanvasAppRef.current?.setStartViewPosition(savedStartViewPosition);
     setSelectedMarkerIndex(null);
     playCanvasAppRef.current?.setSelectedMarkerIndex(null);
     playCanvasAppRef.current?.hideMarkerLabel();
@@ -544,6 +632,9 @@ export default function PlayCanvasEditor() {
         setSavedMarkers([]);
         setAxisStartPos(DEFAULT_START_POS);
         setSavedStartPos(DEFAULT_START_POS);
+        const defaultViewPosition = deriveStartViewPosition(DEFAULT_START_POS);
+        setStartViewPosition(defaultViewPosition);
+        setSavedStartViewPosition(defaultViewPosition);
         setLoadState({
           status: "ready",
           splatUrl: normalizeSplatUrl(directUrl),
@@ -554,6 +645,7 @@ export default function PlayCanvasEditor() {
           orientationX,
           field: null,
           startPos: DEFAULT_START_POS,
+          startViewPosition: defaultViewPosition,
         });
         return;
       }
@@ -609,10 +701,15 @@ export default function PlayCanvasEditor() {
           Array.isArray(field.markers) ? field.markers : undefined,
         );
         const initialStartPos = parseStartPos(normalized.start_pos) ?? DEFAULT_START_POS;
+        const initialStartViewPosition =
+          parseStartViewPosition(normalized.start_view_position) ??
+          deriveStartViewPosition(initialStartPos);
         setMarkers(cloneEditorMarkers(initialMarkers));
         setSavedMarkers(cloneEditorMarkers(initialMarkers));
         setAxisStartPos(initialStartPos);
         setSavedStartPos(initialStartPos);
+        setStartViewPosition(initialStartViewPosition);
+        setSavedStartViewPosition(initialStartViewPosition);
         setSelectedMarkerIndex(null);
         setMode("preview");
 
@@ -623,6 +720,7 @@ export default function PlayCanvasEditor() {
           orientationX,
           field: normalized,
           startPos: initialStartPos,
+          startViewPosition: initialStartViewPosition,
         });
       } catch (err) {
         if (cancelled) return;
@@ -666,6 +764,7 @@ export default function PlayCanvasEditor() {
           performancePreset: getDefaultPerformancePreset(),
           flyOnMarkerClick: false,
           startPos: loadState.startPos,
+          startViewPosition: loadState.startViewPosition,
           showStartAxes: isFieldManagement,
           groundClamp: { enabled: false },
           onLoadProgress: ({ hint, progress }) => {
@@ -721,6 +820,12 @@ export default function PlayCanvasEditor() {
     const markerGizmoActive = mode === "edit" && selectedMarkerIndex !== null;
     app.setStartPosInteractive(!markerGizmoActive);
   }, [isFieldManagement, mode, selectedMarkerIndex, splatLoading]);
+
+  useEffect(() => {
+    const app = playCanvasAppRef.current;
+    if (!app || splatLoading) return;
+    app.setStartViewPosition(startViewPosition);
+  }, [splatLoading, startViewPosition]);
 
   useEffect(() => {
     const app = playCanvasAppRef.current;
@@ -811,7 +916,8 @@ export default function PlayCanvasEditor() {
 
   const hasUnsavedChanges =
     markerSnapshot(markers) !== markerSnapshot(savedMarkers) ||
-    axisStartPos.join(",") !== savedStartPos.join(",");
+    axisStartPos.join(",") !== savedStartPos.join(",") ||
+    startViewPosition.join(",") !== savedStartViewPosition.join(",");
 
   if (loadState.status === "loading") {
     return (
@@ -944,14 +1050,47 @@ export default function PlayCanvasEditor() {
             <section className="markerEditorSection">
               <h2>Start position</h2>
               <p className="markerEditorHint">
-                Drag the large RGB axes in the scene to move the orbit pivot and default camera
-                framing. Save to persist.
+                Drag the large RGB axes in the scene to move the orbit pivot. Capture the
+                opening camera view (position and zoom) separately, then save to persist.
               </p>
+              <label>
+                <span>Orbit pivot (start_pos)</span>
+              </label>
               <div className="markerEditorCallout">
                 X {formatCoordinateForInput(axisStartPos[0])} · Y{" "}
                 {formatCoordinateForInput(axisStartPos[1])} · Z{" "}
                 {formatCoordinateForInput(axisStartPos[2])}
               </div>
+              <label>
+                <span>Opening view (start_view_position)</span>
+              </label>
+              <div className="markerPositionGrid">
+                {(["x", "y", "z"] as const).map((axis, index) => (
+                  <ScrubAxisInput
+                    key={axis}
+                    axis={axis}
+                    value={startViewPositionDrafts[index]}
+                    onChange={(value) => {
+                      if (!isCoordinateDraft(value)) return;
+                      setStartViewPositionDrafts((prev) => {
+                        const next = [...prev] as [string, string, string];
+                        next[index] = value;
+                        return next;
+                      });
+                    }}
+                    onScrubValue={(value) => setStartViewPositionAxisValue(index, value)}
+                    onCommit={() => commitStartViewPositionDraft(index)}
+                    onScrubActiveChange={handleAxisScrubActiveChange}
+                  />
+                ))}
+              </div>
+              <button
+                type="button"
+                className="markerSubtleButton"
+                onClick={handleSetStartViewPosition}
+              >
+                Capture view from camera
+              </button>
             </section>
           ) : null}
 

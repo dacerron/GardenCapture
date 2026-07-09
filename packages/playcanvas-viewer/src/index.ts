@@ -8,7 +8,17 @@ export {
 export { normalizeSplatUrl } from "./normalizeSplatUrl";
 export { parseOrientationX } from "./parseOrientation";
 export { parseGroundClampEnabled } from "./parseGroundClamp";
-export { DEFAULT_SKYBOX_URL } from "./setupSkybox";
+export { parseSplatBudgetOverrideM, parseSplatLodLock } from "./parseSplatBudget";
+export { parseFullSplatMode } from "./parseFullSplatMode";
+export { looksLikePlyHeader, urlLooksLikePly } from "./plyHeader";
+export {
+  getDevFullSplatProxyUrl,
+  getPlySiblingUrl,
+  isPlayCanvasNativeSplatUrl,
+  resolveFullSplatPlayCanvasUrl,
+  type ResolveFullSplatResult,
+} from "./resolveFullSplatPlayCanvasUrl";
+export { DEFAULT_SKYBOX_URL, SKYBOX_FADE_END, SKYBOX_FADE_START, SKYBOX_GROUND_COLOR } from "./setupSkybox";
 export {
   getDefaultPerformancePreset,
   getSplatBudgetM,

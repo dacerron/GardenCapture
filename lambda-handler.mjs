@@ -157,6 +157,7 @@ async function getPins() {
       thumbnail: i.Thumbnail,
       thumbnailAlt: i.ThumbnailAlt,
       start_pos: parseStartPos(i.start_pos),
+      start_view_position: parseStartPos(i.start_view_position),
       markers: parseMarkers(i.markers)
     }));
   }

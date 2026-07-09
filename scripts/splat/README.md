@@ -233,6 +233,66 @@ Keep existing `File` (`.ksplat`) for the current viewer. Add PlayCanvas fields f
 
 ---
 
+## Legacy vs PlayCanvas visual quality
+
+The legacy viewer loads **`.splat` / `.ksplat`** via **mkkellogg** (`@mkkellogg/gaussian-splats-3d`) in Three.js. The PlayCanvas viewer loads **SOG** or **streamed LOD** produced by **`splat-transform`**. Those are **different file formats and different renderers**, not just different quality presets on the same asset.
+
+### Why legacy can look better at the same angle
+
+| | Legacy | PlayCanvas |
+|---|--------|------------|
+| **Source file** | `.splat` / `.ksplat` (mkkellogg) | SOG or streamed LOD chunks |
+| **Precision** | Full per-Gaussian data from source | **Lossy** quantization (positions, scales, colors in WebP/codebooks) |
+| **Renderer** | mkkellogg WebGL sort + rasterize | PlayCanvas gsplat (WebGPU/WebGL2) |
+| **Gaussian count** | All splats in file | Often similar total count after conversion — **count ≠ identical appearance** |
+
+SOG is **lossy by design** ([PlayCanvas SOG spec](https://developer.playcanvas.com/user-manual/gaussian-splatting/formats/sog/)). Positions and scales are quantized; splats can render **smaller or misaligned**, which shows up as **gaps** (black clear color), especially on **dark, thin, or view-dependent** surfaces (e.g. vertical soil faces when the camera is level with the floor).
+
+This is **not** fixed by viewer URL params alone (`budget=0`, `lod=0`, `orientation=…`). It is also **not** “black splats rendered transparent” — holes are usually **missing overlap** or **low effective opacity** at that pixel, which reads as see-through on a black background.
+
+### What we ruled out (UM_05 case study, 2026)
+
+For **UM_05** (`UM05_HighQuality_0SH`), side-by-side testing showed:
+
+- Legacy `.splat` ≈ **4.1M** Gaussians; PlayCanvas LOD0 ≈ **4.09M** — similar count, worse appearance in PlayCanvas at the same camera angle.
+- **`budget=0`** — not the global splat budget cap.
+- **`lod=0`** — not distance-based LOD downgrade.
+- **Re-convert variants** ([`reconvert-um05.ps1`](reconvert-um05.ps1): `lod0-only`, `single-sog`, `nocrop-lod0`, `lod-standard`, `rotation-baked`) — all still SOG + PlayCanvas; **none matched legacy** at the good angle.
+
+Conclusion: remaining gap is **SOG encoding + PlayCanvas rendering vs mkkellogg `.splat`**, plus **view-dependent thin coverage** in the source (legacy also shows some holes at bad angles; PlayCanvas is less forgiving).
+
+### Practical mitigations
+
+1. **Authoring** — Set `start_view_position` to a framing where the scene looks solid (often steeper than a level walk-along view). Avoid default views into dark vertical faces.
+2. **Per-field fallback** — Use `?renderer=legacy` on `/viewer/` when PlayCanvas quality is unacceptable for a field (e.g. UM_05).
+3. **Conversion tuning** — Try newer `splat-transform`, `-i` / `--iterations` for SH compression (see [SplatTransform docs](https://developer.playcanvas.com/user-manual/splat-transform/)); UM_05 is **0SH** so SH iteration helps less than position/scale quantization.
+4. **Re-capture / densify** — Improve coverage in problem regions in training or SuperSplat (underlying reconstruction issue).
+5. **Engine/tooling** — Track PlayCanvas forum/GitHub for SOG position accuracy and quality fixes (links below).
+
+### Debug URLs (PlayCanvas viewer)
+
+```text
+/viewer/?m={FieldID}&budget=0&lod=0&groundClamp=0
+/viewer/?url=/work-out/{basename}/lod-meta.json&budget=0&lod=0
+/viewer/?m={FieldID}&renderer=legacy
+```
+
+### External discussion (SOG quality / artifacts)
+
+Community and PlayCanvas reports align with “SOG can look worse than source PLY/splat at same splat count”:
+
+| Topic | Link |
+|-------|------|
+| PLY vs SOG messy after convert; PlayCanvas staff: **position quantization** cause; streamed SOG may help | [PlayCanvas forum — PLY vs SOG](https://forum.playcanvas.com/t/ply-vs-sog/42359) |
+| **Significant SOG quality loss** vs PLY; SH import bug fixed in engine PR [#7972](https://github.com/playcanvas/engine/pull/7972) | [splat-transform issue #52](https://github.com/playcanvas/splat-transform/issues/52) |
+| SOG **lossy**; PLY for archive, SOG for delivery | [PlayCanvas — Splat file formats](https://developer.playcanvas.com/user-manual/gaussian-splatting/formats/) |
+| **False transparency** in 3DGS training (research; not SOG-specific) | [Noise Guided Splatting (arXiv)](https://arxiv.org/html/2510.15736v1) |
+| SH quantization / clamping discussion on PLY→SOG color artifacts | [LichtFeld-Studio issue #868](https://github.com/MrNeRF/LichtFeld-Studio/issues/868) |
+
+**Do not re-debug** a field that looks worse in PlayCanvas than legacy by only raising splat budget or LOD — confirm with `budget=0&lod=0` and legacy side-by-side first.
+
+---
+
 ## Batch convert all files in `temp/`
 
 **Script docs:** [`batch-lod-from-temp.md`](batch-lod-from-temp.md) (prerequisites, usage, env vars, troubleshooting).
@@ -286,6 +346,15 @@ http://localhost:5173/viewer/?url=/work-out/{basename}/lod-meta.json
 ```
 
 Vite serves `work/out/` at `/work-out/` during dev only.
+
+**UM_05 quality comparison rebuild:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/splat/reconvert-um05.ps1
+powershell -ExecutionPolicy Bypass -File scripts/splat/reconvert-um05.ps1 -CheckOnly
+```
+
+See [Legacy vs PlayCanvas visual quality](#legacy-vs-playcanvas-visual-quality) above.
 
 ---
 

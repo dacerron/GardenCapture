@@ -38,6 +38,8 @@ export type Field = {
   markers?: ViewerMarkerPayload[];
   Markers?: ViewerMarkerPayload[];
   start_pos?: unknown;
+  /** Opening / reset camera world position (orbit focus remains `start_pos`). */
+  start_view_position?: unknown;
 };
 
 export type AdminField = Omit<Field, "markers" | "Markers"> & {
@@ -50,6 +52,7 @@ export type Pin = {
   FilePlayCanvas?: string;
   FileFormat?: FieldFileFormat | string;
   start_pos?: unknown;
+  start_view_position?: unknown;
   markers?: unknown[];
 };
 

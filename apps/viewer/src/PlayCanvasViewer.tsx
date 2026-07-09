@@ -6,16 +6,23 @@ import {
   createPlayCanvasApp,
   getDefaultPerformancePreset,
   normalizeSplatUrl,
+  parseFullSplatMode,
   parseOrientationX,
   parseGroundClampEnabled,
+  parseSplatBudgetOverrideM,
+  parseSplatLodLock,
   PLAYCANVAS_PERF_PRESET_LABELS,
+  resolveFullSplatPlayCanvasUrl,
   type PlayCanvasApp,
 } from "@soil/playcanvas-viewer";
+import { getFieldLegacySplatUrl } from "@soil/shared/utils/splatUrls";
 import type { NavigableMarker } from "@soil/shared/markers/navigableMarkers";
 import { getNavigableMarkersFromField } from "@soil/shared/markers/navigableMarkers";
 import {
   DEFAULT_START_POS,
+  deriveStartViewPosition,
   parseStartPos,
+  parseStartViewPosition,
 } from "@soil/shared/utils/startPos";
 import type { ControlMode, PerformancePreset, SceneInfo } from "@soil/shared/three/ScreenSpace";
 import "@soil/shared/styles.css";
@@ -28,9 +35,12 @@ type LoadState =
   | {
       status: "ready";
       splatUrl: string;
+      fullSplatMode: boolean;
+      fullSplatSource?: string;
       sceneInfo: SceneInfo;
       orientationX: number;
       startPos: [number, number, number];
+      startViewPosition: [number, number, number];
       markers: NavigableMarker[];
     };
 
@@ -114,25 +124,53 @@ export default function PlayCanvasViewer() {
 
   const fieldId = searchParams.get("m")?.trim() ?? "";
   const directUrl = searchParams.get("url")?.trim() ?? "";
+  const fullSplatMode = parseFullSplatMode(searchParams);
   const orientationX = parseOrientationX(searchParams.get("orientation"));
+  const splatBudgetOverrideM = parseSplatBudgetOverrideM(searchParams);
+  const lockLodLevel = parseSplatLodLock(searchParams);
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
+      const resolveSplat = async (legacyUrl: string) => {
+        if (!fullSplatMode) {
+          return { url: normalizeSplatUrl(legacyUrl), fullSplatSource: undefined as string | undefined };
+        }
+        const resolved = await resolveFullSplatPlayCanvasUrl(legacyUrl);
+        if (!resolved.ok) {
+          throw new Error(resolved.message);
+        }
+        return { url: normalizeSplatUrl(resolved.url), fullSplatSource: resolved.source };
+      };
+
       if (directUrl) {
-        setLoadState({
-          status: "ready",
-          splatUrl: normalizeSplatUrl(directUrl),
-          sceneInfo: {
-            title: searchParams.get("title") ?? "Local splat",
-            location: searchParams.get("location") ?? undefined,
-          },
-          orientationX,
-          startPos:
-            parseStartPosQueryParam(searchParams.get("startPos")) ?? DEFAULT_START_POS,
-          markers: [],
-        });
+        const startPos =
+          parseStartPosQueryParam(searchParams.get("startPos")) ?? DEFAULT_START_POS;
+        try {
+          const { url, fullSplatSource } = await resolveSplat(directUrl);
+          setLoadState({
+            status: "ready",
+            splatUrl: url,
+            fullSplatMode,
+            fullSplatSource,
+            sceneInfo: {
+              title: searchParams.get("title") ?? "Local splat",
+              location: searchParams.get("location") ?? undefined,
+            },
+            orientationX,
+            startPos,
+            startViewPosition: deriveStartViewPosition(startPos),
+            markers: [],
+          });
+        } catch (err) {
+          if (cancelled) return;
+          setLoadState({
+            status: "error",
+            title: fullSplatMode ? "Full splat load failed" : "Failed to load URL",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
         return;
       }
 
@@ -163,25 +201,39 @@ export default function PlayCanvasViewer() {
           return;
         }
 
-        const splatUrl = field.FilePlayCanvas?.trim() ?? "";
+        const splatUrl = fullSplatMode
+          ? getFieldLegacySplatUrl(field)
+          : field.FilePlayCanvas?.trim() ?? "";
         if (!splatUrl) {
           setLoadState({
             status: "error",
-            title: "Missing PlayCanvas splat",
-            message: `Field "${field.FieldID}" has no FilePlayCanvas URL configured.`,
+            title: fullSplatMode ? "Missing legacy splat" : "Missing PlayCanvas splat",
+            message: fullSplatMode
+              ? `Field "${field.FieldID}" has no File URL (.ksplat/.splat/.ply).`
+              : `Field "${field.FieldID}" has no FilePlayCanvas URL configured.`,
           });
           return;
         }
 
+        const { url: resolvedUrl, fullSplatSource } = await resolveSplat(splatUrl);
+
+        const startPos =
+          parseStartPosQueryParam(searchParams.get("startPos")) ??
+          parseStartPos(field.start_pos) ??
+          DEFAULT_START_POS;
+        const startViewPosition =
+          parseStartViewPosition(field.start_view_position) ??
+          deriveStartViewPosition(startPos);
+
         setLoadState({
           status: "ready",
-          splatUrl: normalizeSplatUrl(splatUrl),
+          splatUrl: resolvedUrl,
+          fullSplatMode,
+          fullSplatSource,
           sceneInfo: getFieldSceneInfo(field),
           orientationX,
-          startPos:
-            parseStartPosQueryParam(searchParams.get("startPos")) ??
-            parseStartPos(field.start_pos) ??
-            DEFAULT_START_POS,
+          startPos,
+          startViewPosition,
           markers: getNavigableMarkersFromField(field),
         });
       } catch (err) {
@@ -189,8 +241,11 @@ export default function PlayCanvasViewer() {
         console.error("[PlayCanvasViewer] failed to load field", err);
         setLoadState({
           status: "error",
-          title: "Failed to load field",
-          message: "The field record could not be loaded. Check the FieldID and try again.",
+          title: fullSplatMode ? "Full splat load failed" : "Failed to load field",
+          message:
+            err instanceof Error
+              ? err.message
+              : "The field record could not be loaded. Check the FieldID and try again.",
         });
       }
     })();
@@ -198,7 +253,7 @@ export default function PlayCanvasViewer() {
     return () => {
       cancelled = true;
     };
-  }, [directUrl, fieldId, orientationX, searchParams.get("title"), searchParams.get("location")]);
+  }, [directUrl, fieldId, fullSplatMode, orientationX, searchParams.get("title"), searchParams.get("location")]);
 
   controlModeRef.current = controlMode;
   performancePresetRef.current = performancePreset;
@@ -224,12 +279,21 @@ export default function PlayCanvasViewer() {
           splatUrl: loadState.splatUrl,
           orientationX: loadState.orientationX,
           startPos: loadState.startPos,
+          startViewPosition: loadState.startViewPosition,
           markers: loadState.markers,
           markerOverlayParent: overlayParent,
           defaultControlMode: controlModeRef.current,
           performancePreset: performancePresetRef.current,
+          ...(splatBudgetOverrideM !== undefined
+            ? { splatBudgetM: splatBudgetOverrideM }
+            : {}),
+          ...(lockLodLevel !== undefined ? { lockLodLevel } : {}),
           groundClamp: {
-            enabled: parseGroundClampEnabled(searchParams),
+            enabled: loadState.fullSplatMode
+              ? ["1", "true", "yes"].includes(
+                  searchParams.get("groundClamp")?.trim().toLowerCase() ?? "",
+                )
+              : parseGroundClampEnabled(searchParams),
           },
           onLoadProgress: ({ hint, progress }) => {
             if (cancelled) return;
@@ -267,7 +331,7 @@ export default function PlayCanvasViewer() {
       playCanvasAppRef.current = null;
       app?.destroy();
     };
-  }, [loadState]);
+  }, [loadState, splatBudgetOverrideM, lockLodLevel]);
 
   function handlePerformancePresetChange(preset: PerformancePreset) {
     setPerformancePreset(preset);

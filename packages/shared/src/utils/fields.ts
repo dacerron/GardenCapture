@@ -31,5 +31,9 @@ export function normalizeFieldItem(raw: unknown): Field | null {
     markers,
     Markers: markers,
     start_pos: value.start_pos ?? value.StartPos ?? value.startPos,
+    start_view_position:
+      value.start_view_position ??
+      value.StartViewPosition ??
+      value.startViewPosition,
   };
 }

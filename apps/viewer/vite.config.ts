@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import glsl from "vite-plugin-glsl";
+import { createDevFullSplatMiddleware } from "./src/devFullSplatMiddleware";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
@@ -13,6 +14,7 @@ const WORK_OUT_MIME: Record<string, string> = {
   ".json": "application/json",
   ".webp": "image/webp",
   ".sog": "application/octet-stream",
+  ".ply": "application/octet-stream",
 };
 
 /** Dev/preview static route: /work-out/{basename}/… → repo work/out/ */
@@ -75,12 +77,15 @@ function serveWorkOutMiddleware(
 }
 
 function serveWorkOutPlugin(): Plugin {
+  const fullSplatMiddleware = createDevFullSplatMiddleware(workOutDir);
   return {
     name: "serve-work-out",
     configureServer(server) {
+      server.middlewares.use(fullSplatMiddleware);
       server.middlewares.use("/work-out", serveWorkOutMiddleware);
     },
     configurePreviewServer(server) {
+      server.middlewares.use(fullSplatMiddleware);
       server.middlewares.use("/work-out", serveWorkOutMiddleware);
     },
   };
