@@ -17,6 +17,7 @@ import {
   setupEditorPlacement,
   type PlacementPreviewState,
 } from "./editorPlacement";
+import { mapLegacyStoredPosition, mapDisplayToLegacyStored } from "./sceneCoordinates";
 
 export type { PlacementPreviewState };
 
@@ -55,6 +56,7 @@ export function setupPlayCanvasMarkers(options: {
   flyOnMarkerClick?: boolean;
   cameraControlHooks?: CameraControlHooks;
   clampCameraPosition?: CameraPositionClamp | null;
+  splatEntity?: pc.Entity;
 }): PlayCanvasMarkersHandle {
   const {
     app,
@@ -64,6 +66,7 @@ export function setupPlayCanvasMarkers(options: {
     flyOnMarkerClick = true,
     cameraControlHooks,
     clampCameraPosition,
+    splatEntity,
   } = options;
 
   let markers = [...options.markers];
@@ -71,6 +74,11 @@ export function setupPlayCanvasMarkers(options: {
   let markerClickHandler = options.onMarkerClick ?? null;
   let activeTransition = null;
   let programmaticTooltipShow = false;
+
+  const displayPosition = (position: [number, number, number]) =>
+    splatEntity
+      ? mapLegacyStoredPosition(position, splatEntity)
+      : position;
 
   const markerEntities = [];
   const annotationScripts = [];
@@ -278,8 +286,8 @@ export function setupPlayCanvasMarkers(options: {
       app,
       cameraEntity,
       controls,
-      marker.position,
-      marker.viewPosition,
+      displayPosition(marker.position),
+      displayPosition(marker.viewPosition),
       cameraControlHooks,
       clampCameraPosition,
     );
@@ -344,7 +352,8 @@ export function setupPlayCanvasMarkers(options: {
     markers.forEach((marker, index) => {
       const entity = markerEntities[index];
       if (!entity) return;
-      entity.setPosition(marker.position[0], marker.position[1], marker.position[2]);
+      const [x, y, z] = displayPosition(marker.position);
+      entity.setPosition(x, y, z);
     });
   };
 
@@ -391,7 +400,8 @@ export function setupPlayCanvasMarkers(options: {
 
     markers.forEach((marker, index) => {
       const entity = new pc.Entity(`marker-${index}`);
-      entity.setPosition(marker.position[0], marker.position[1], marker.position[2]);
+      const [x, y, z] = displayPosition(marker.position);
+      entity.setPosition(x, y, z);
       app.root.addChild(entity);
       markerEntities.push(entity);
       entity.addComponent("script");
@@ -546,13 +556,17 @@ export function setupPlayCanvasMarkers(options: {
     setMarkerPosition(index, position) {
       const marker = markers[index];
       if (!marker) return;
+      const stored = splatEntity
+        ? mapDisplayToLegacyStored(position, splatEntity)
+        : position;
       markers[index] = {
         ...marker,
-        position: [position[0], position[1], position[2]],
+        position: [stored[0], stored[1], stored[2]],
       };
       const entity = markerEntities[index];
       if (entity) {
-        entity.setPosition(position[0], position[1], position[2]);
+        const [x, y, z] = displayPosition(stored);
+        entity.setPosition(x, y, z);
       }
     },
     setHotspotPointerEvents(index, enabled) {

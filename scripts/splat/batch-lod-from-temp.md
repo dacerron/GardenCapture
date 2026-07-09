@@ -63,10 +63,13 @@ bash scripts/splat/check-batch-progress.sh --watch 15   # refresh every 15s
    - If scene extent **> 200 m**, crops to a **±150 m** box (distant sky / outlier shell)
 2. **Decimate** 50% per step until coarsest level ≤ ~**1.05M** Gaussians (max **3** steps) → `lod1.ply`, `lod2.ply`, …
 3. **Bundle streamed LOD** → `work/out/{basename}/lod-meta.json` (+ `0_0/`, `1_0/`, … chunk folders)
-4. **Voxel ground collision** (from **coarsest** `lodN.ply` by default) → `work/out/{basename}/collision.voxel.json` + `collision.voxel.bin`
-   - `--voxel-params 0.1,0.12` and `--voxel-floor-fill 1.6` by default (outdoor / soil scenes)
-   - **Slow:** often **10–45+ minutes** per ~4M-Gaussian scene; progress is streamed to the console during step 4
-   - Optional `collision.collision.glb` when `SPLAT_COLLISION_MESH=faces` or `smooth`
+4. **Collision prep** → `work/lod/{basename}/collision-src.ply`
+   - Culls distant splats before voxelization (LOD crop stays wide at ±150 m)
+   - Default filters: **cluster** at seed + **60 m sphere** at `SPLAT_COLLISION_SEED_POS`
+5. **Voxel ground collision** (from `collision-src.ply`) → `collision.voxel.json` + `.voxel.bin`
+   - Skipped when **post-prep** span exceeds **`SPLAT_COLLISION_MAX_EXTENT_M`** (default **120 m**)
+   - Per-scene **timeout** via **`SPLAT_COLLISION_TIMEOUT_MIN`** (default **90 min**)
+   - Auto-coarsens voxel size on medium scenes unless you set `SPLAT_VOXEL_PARAMS` explicitly
    - Used by the PlayCanvas viewer for camera ground clamp ([`packages/playcanvas-viewer`](../../packages/playcanvas-viewer/))
 
 ### Output layout
@@ -75,6 +78,7 @@ bash scripts/splat/check-batch-progress.sh --watch 15   # refresh every 15s
 work/
   batch-lod.log                          # run log (append)
   lod/{basename}/lod0.ply, lod1.ply, …   # intermediates (gitignored)
+  lod/{basename}/collision-src.ply       # collision-only cull (gitignored)
   out/{basename}/lod-meta.json           # upload this folder
   out/{basename}/collision.voxel.json    # ground collider header
   out/{basename}/collision.voxel.bin     # ground collider octree data
@@ -101,6 +105,14 @@ Set before running (optional):
 | `SPLAT_COLLISION_SOURCE` | `coarse` | `coarse` = coarsest decimated PLY (faster); `lod0` / `fine` = full resolution. |
 | `SPLAT_COLLISION_MESH` | *(off)* | Set to `faces` or `smooth` to also write `collision.collision.glb`. |
 | `SPLAT_COLLISION_STRICT` | *(off)* | Set to `1` to abort the batch if collision generation fails. |
+| `SPLAT_COLLISION_MAX_EXTENT_M` | `120` | Skip voxel when **post-prep** largest-axis span (m) exceeds this. |
+| `SPLAT_COLLISION_TIMEOUT_MIN` | `90` | Kill collision step after this many minutes per scene (`0` = no limit). |
+| `SPLAT_COLLISION_FILTER_CLUSTER` | *(on)* | `--filter-cluster` at seed before voxel (GPU). Set `0` / `skip` to disable. |
+| `SPLAT_COLLISION_SPHERE_M` | `60` | Radial cull at seed (`-S x,y,z,r`). `0` / `none` = skip sphere filter. |
+| `SPLAT_COLLISION_BOX_HALF_M` | *(off)* | Optional axis-aligned box half-size centered on seed (`-B`). `0` / `none` = skip. |
+| `SPLAT_COLLISION_BOX_Y_MIN` | *(auto)* | Optional absolute min Y for collision box (default: seed Y − box half). |
+| `SPLAT_COLLISION_BOX_Y_MAX` | *(auto)* | Optional absolute max Y for collision box (default: seed Y + box half). |
+| `SPLAT_COLLISION_FILTER_FLOATERS` | *(off)* | Set to `1` for GPU `--filter-floaters` before voxel. |
 
 Example — re-run UBC Farm with defaults:
 
@@ -109,10 +121,35 @@ $env:SPLAT_ROTATION = "180,0,0"
 powershell -ExecutionPolicy Bypass -File scripts/splat/batch-lod-from-temp.ps1
 ```
 
-Example — skip collision (LOD only):
+Example — LOD only (recommended for large cropped scenes):
 
 ```powershell
 $env:SPLAT_COLLISION = "skip"
+powershell -ExecutionPolicy Bypass -File scripts/splat/batch-lod-from-temp.ps1
+```
+
+Example — collision with defaults (60 m sphere + cluster at origin):
+
+```powershell
+# Defaults: coarsest LOD -> prep (cluster + 60m sphere) -> voxel
+powershell -ExecutionPolicy Bypass -File scripts/splat/batch-lod-from-temp.ps1
+```
+
+Example — tighter walkable area around a known start point:
+
+```powershell
+$env:SPLAT_COLLISION_SEED_POS = "12.5,1.2,-8.0"
+$env:SPLAT_COLLISION_SPHERE_M = "45"
+$env:SPLAT_COLLISION_BOX_HALF_M = "40"
+powershell -ExecutionPolicy Bypass -File scripts/splat/batch-lod-from-temp.ps1
+```
+
+Example — attempt collision on very large prep result (slow; use coarse voxels + high extent cap):
+
+```powershell
+$env:SPLAT_COLLISION_MAX_EXTENT_M = "200"
+$env:SPLAT_VOXEL_PARAMS = "0.25,0.2"
+$env:SPLAT_COLLISION_TIMEOUT_MIN = "120"
 powershell -ExecutionPolicy Bypass -File scripts/splat/batch-lod-from-temp.ps1
 ```
 
@@ -145,7 +182,30 @@ The viewer auto-loads collision from the same folder:
 /work-out/{basename}/collision.voxel.json
 ```
 
-*(Voxel height query is still being implemented; until then the viewer uses an AABB floor fallback even when collision files are present.)*
+### Collision debug overlay (viewer)
+
+Append `collisionDebug=1` to the viewer URL to draw:
+
+- **Green translucent mesh** — collision surface (`collision.collision.glb` if present, otherwise a runtime mesh built from the voxel octree)
+- **Cyan line** — 50 cm world-down probe from the camera
+- **Orange line** — center-screen probe (`nearClip + 20 cm`)
+
+```text
+http://localhost:5173/viewer/?url=/work-out/{basename}/lod-meta.json&collisionDebug=1
+```
+
+Generate the optional GLB mesh during batch (matches splat-transform exactly):
+
+```powershell
+$env:SPLAT_COLLISION_MESH = "faces"
+.\scripts\splat\batch-lod-from-temp.ps1
+```
+
+Output: `work/out/{basename}/collision.collision.glb` (uploaded with the LOD bundle).
+
+### What is `--voxel-carve`?
+
+After voxelization (and usually `--voxel-floor-fill` for outdoor scenes), **carve** flood-fills navigable space from `--seed-pos` using a capsule (default height 1.6 m, radius 0.2 m). Voxels the capsule cannot reach are removed. That trims stray shells and floaters so runtime collision matches walkable space more closely. PlayCanvas recommends carve for smoother collisions; this batch script does **not** enable it by default yet — add `--voxel-carve` to the voxel step when regenerating if you want to experiment.
 
 Compare with legacy:
 
@@ -184,7 +244,7 @@ After upload, invalidate CloudFront for `/splats/lod/{basename}/*` if objects us
 | One ~2–4M scene | ~15–60 minutes (collision dominates) |
 | All 7 production scenes | ~2–6+ hours |
 
-Decimation and LOD bundling are relatively fast. **Step 4 (voxel collision)** is the slow step — it can look hung because older script versions buffered all `splat-transform` output until completion. The updated script streams progress lines during step 4.
+Decimation and LOD bundling are relatively fast. **Steps 4a–4b (collision prep + voxel)** are the slow steps — voxelization can look hung because older script versions buffered all `splat-transform` output until completion. The updated script streams progress lines during step 4b.
 
 ---
 
@@ -197,8 +257,12 @@ Decimation and LOD bundling are relatively fast. **Step 4 (voxel collision)** is
 | `Cannot find an overload for "Max"` | PowerShell `[math]::Max` arity | Pull latest script |
 | PlayCanvas scene upside-down | LOD exported without rotation | Re-run with default `SPLAT_ROTATION=180,0,0` or use `?orientation=180` on old CDN assets |
 | PlayCanvas freeze / smeared view | Bad scales or distant sky shell | Script auto-filters; check `work/batch-lod.log` for crop notes |
-| Step 4 appears hung / no output | Voxelization is CPU-heavy; old script buffered stderr | Check Task Manager for `node` running `splat-transform` with high CPU; pull latest script for streamed progress; use coarser `SPLAT_VOXEL_PARAMS=0.15,0.15` and `SPLAT_COLLISION_SOURCE=coarse` |
-| Collision step failed | Old `splat-transform` or bad seed | Upgrade CLI (`npm i -g @playcanvas/splat-transform@latest`); adjust `SPLAT_COLLISION_SEED_POS`; or `SPLAT_COLLISION=skip` |
+| Step 4 appears hung / no output | Voxelization is CPU-heavy; old script buffered stderr | Kill stale `node`/`splat-transform` processes; pull latest script (prep cull + timeout); use `check-batch-progress.sh` |
+| Collision runs for days | Voxelizing full cropped LOD without prep | Stop run; pull latest script (default 60 m sphere prep); or `SPLAT_COLLISION=skip` |
+| Collision skipped (extent) | Post-prep span > `SPLAT_COLLISION_MAX_EXTENT_M` (default 120 m) | Tighten `SPLAT_COLLISION_SPHERE_M` / box, or raise cap with coarse `SPLAT_VOXEL_PARAMS` |
+| Collision skipped (0 gaussians) | Seed outside scene or filters too aggressive | Fix `SPLAT_COLLISION_SEED_POS`; widen sphere or disable cluster (`SPLAT_COLLISION_FILTER_CLUSTER=0`) |
+| Collision voxel failed: `%1 is not a valid Win32 application` | `Start-Process` cannot run npm's bare `splat-transform` shim on Windows | Pull latest script (uses `splat-transform.cmd`); or set `SPLAT_COLLISION_TIMEOUT_MIN=0` as a workaround |
+| Collision step failed / timed out | Prep result still too large or slow machine | Tighten prep filters, increase `SPLAT_VOXEL_PARAMS` coarseness, lower `SPLAT_COLLISION_TIMEOUT_MIN`, or `SPLAT_COLLISION=skip` |
 | Collision files missing after run | Non-fatal warning (default) | Check `work/batch-lod.log`; set `SPLAT_COLLISION_STRICT=1` to fail fast |
 | Legacy `/viewer/` broken | Should be unrelated | Script does not change `File` / `.ksplat` on CDN |
 

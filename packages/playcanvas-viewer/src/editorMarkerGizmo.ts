@@ -2,7 +2,9 @@
 import * as pc from "playcanvas";
 import {
   collectRgbAxisPickParts,
+  computeGizmoDistanceScale,
   createRgbAxisRoot,
+  getCameraViewDepth,
   GIZMO_AXIS_LENGTH,
   GIZMO_VISUAL_SCALE,
   GIZMO_HOVER_OPACITY,
@@ -299,6 +301,9 @@ export function setupEditorMarkerGizmo(options: {
   let dragPlaneNormal = new pc.Vec3();
   let dragGrabOffset = new pc.Vec3();
   let dragGrabAxisScalar = 0;
+  let gizmoBaseScale = 1;
+  let distanceScaleAttached = false;
+  const scratchViewPos = new pc.Vec3();
   const axisDirs = {
     x: new pc.Vec3(1, 0, 0),
     y: new pc.Vec3(0, 1, 0),
@@ -308,8 +313,32 @@ export function setupEditorMarkerGizmo(options: {
   const applyGizmoRadius = (radius: number) => {
     const safeRadius =
       typeof radius === "number" && Number.isFinite(radius) ? radius : DEFAULT_MARKER_RADIUS;
-    const multiplier = (safeRadius / DEFAULT_MARKER_RADIUS) * GIZMO_VISUAL_SCALE;
-    gizmoRoot.setLocalScale(multiplier, multiplier, multiplier);
+    gizmoBaseScale = (safeRadius / DEFAULT_MARKER_RADIUS) * GIZMO_VISUAL_SCALE;
+    updateDistanceScale();
+  };
+
+  const updateDistanceScale = () => {
+    if (!gizmoRoot.enabled) return;
+    const viewDepth = getCameraViewDepth(cameraEntity, gizmoRoot.getPosition(), scratchViewPos);
+    const scale = gizmoBaseScale * computeGizmoDistanceScale(viewDepth);
+    gizmoRoot.setLocalScale(scale, scale, scale);
+  };
+
+  const onPrerender = () => {
+    updateDistanceScale();
+  };
+
+  const attachDistanceScale = () => {
+    if (distanceScaleAttached) return;
+    app.on("prerender", onPrerender);
+    distanceScaleAttached = true;
+    updateDistanceScale();
+  };
+
+  const detachDistanceScale = () => {
+    if (!distanceScaleAttached) return;
+    app.off("prerender", onPrerender);
+    distanceScaleAttached = false;
   };
 
   applyGizmoRadius(DEFAULT_MARKER_RADIUS);
@@ -585,8 +614,10 @@ export function setupEditorMarkerGizmo(options: {
   const syncListenerAttachment = () => {
     if (!gizmoRoot.enabled) {
       detachListeners();
+      detachDistanceScale();
       return;
     }
+    attachDistanceScale();
     if (interactive) {
       attachListeners();
     } else {
@@ -603,6 +634,7 @@ export function setupEditorMarkerGizmo(options: {
         }
         gizmoRoot.enabled = false;
         detachListeners();
+        detachDistanceScale();
         return;
       }
 
@@ -625,6 +657,7 @@ export function setupEditorMarkerGizmo(options: {
     setPosition(position) {
       if (!gizmoRoot.enabled) return;
       gizmoRoot.setPosition(position[0], position[1], position[2]);
+      updateDistanceScale();
     },
     setRadius(radius) {
       if (!gizmoRoot.enabled) return;
@@ -632,6 +665,7 @@ export function setupEditorMarkerGizmo(options: {
     },
     destroy() {
       detachListeners();
+      detachDistanceScale();
       if (dragging) {
         dragging = false;
         cameraControlHooks.resumeCameraControls();

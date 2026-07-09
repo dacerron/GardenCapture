@@ -97,12 +97,16 @@ print_log_summary() {
       \$start = \$lines | Where-Object { \$_ -match 'batch-lod-from-temp start' } | Select-Object -Last 1
       \$processing = \$lines | Where-Object { \$_ -match '^\\[.*\\] Processing ' } | Select-Object -Last 1
       \$collision = \$lines | Where-Object { \$_ -match 'collision start:' } | Select-Object -Last 1
+      \$collisionSkip = \$lines | Where-Object { \$_ -match 'collision skipped:' } | Select-Object -Last 1
+      \$collisionWarn = \$lines | Where-Object { \$_ -match 'collision voxel failed' } | Select-Object -Last 1
       \$done = \$lines | Where-Object { \$_ -match '^\\[.*\\] Done ' } | Select-Object -Last 1
       \$complete = \$lines | Where-Object { \$_ -match 'batch-lod-from-temp complete' } | Select-Object -Last 1
       \$doneCount = (\$lines | Where-Object { \$_ -match '^\\[.*\\] Done ' }).Count
       if (\$start) { Write-Host ('  Latest run:  ' + (\$start -replace '^\\[[^\\]]+\\]\\s*', '')) }
       if (\$processing) { Write-Host ('  Processing:  ' + (\$processing -replace '^\\[[^\\]]+\\]\\s*', '')) }
       if (\$collision) { Write-Host ('  Collision:   ' + (\$collision -replace '^\\[[^\\]]+\\]\\s*', '')) }
+      if (\$collisionSkip) { Write-Host ('  Collision skip:' + (\$collisionSkip -replace '^\\[[^\\]]+\\]\\s*', '')) }
+      if (\$collisionWarn) { Write-Host ('  Collision warn:' + (\$collisionWarn -replace '^\\[[^\\]]+\\]\\s*', '')) }
       if (\$done) { Write-Host ('  Last done:   ' + (\$done -replace '^\\[[^\\]]+\\]\\s*', '')) }
       if (\$complete) { Write-Host ('  Complete:    ' + (\$complete -replace '^\\[[^\\]]+\\]\\s*', '')) }
       Write-Host \"  Scenes marked done (log): \$doneCount\"

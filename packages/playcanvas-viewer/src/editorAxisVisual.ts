@@ -264,3 +264,26 @@ export function collectRgbAxisPickParts(gizmo: RgbAxisRoot): pc.Entity[] {
   parts.push(gizmo.center);
   return parts;
 }
+
+/**
+ * View depth where translate gizmos match their fixed local axis length × visual scale
+ * (calibrated for typical editor orbit distance).
+ */
+export const GIZMO_REFERENCE_VIEW_DEPTH = 6;
+
+/** Camera view-space depth (positive along forward axis), matching PlayCanvas annotations. */
+export function getCameraViewDepth(
+  cameraEntity: pc.Entity,
+  worldPosition: pc.Vec3,
+  out = new pc.Vec3(),
+): number {
+  const camera = cameraEntity.camera;
+  if (!camera) return GIZMO_REFERENCE_VIEW_DEPTH;
+  camera.viewMatrix.transformPoint(worldPosition, out);
+  return Math.max(-out.z, 0.001);
+}
+
+/** Scale factor so gizmos shrink when the camera is close and grow when it moves away. */
+export function computeGizmoDistanceScale(viewDepth: number): number {
+  return viewDepth / GIZMO_REFERENCE_VIEW_DEPTH;
+}

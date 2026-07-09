@@ -247,9 +247,9 @@ This reads every `.ksplat` / `.splat` in [`temp/`](../temp/), writes:
 
 - Intermediate PLY LOD chain → `work/lod/{basename}/lod0.ply`, `lod1.ply`, …
 - Streamed LOD bundle → `work/out/{basename}/lod-meta.json` (+ chunk folders)
-- Ground collision voxels → `work/out/{basename}/collision.voxel.json` + `collision.voxel.bin`
+- Ground collision voxels → `work/out/{basename}/collision.voxel.json` + `collision.voxel.bin` (prep culls to ~60 m sphere at seed by default)
 
-See [`batch-lod-from-temp.md`](batch-lod-from-temp.md) for collision env vars (`SPLAT_COLLISION`, `SPLAT_VOXEL_PARAMS`, …).
+See [`batch-lod-from-temp.md`](batch-lod-from-temp.md) for collision env vars (`SPLAT_COLLISION`, `SPLAT_COLLISION_SPHERE_M`, `SPLAT_VOXEL_PARAMS`, …).
 
 Halves splat count at each level until coarsest ≤ ~1.05M Gaussians (max 3 decimation steps).
 

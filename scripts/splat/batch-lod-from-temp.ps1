@@ -14,6 +14,14 @@
 #   SPLAT_COLLISION_SOURCE=coarse  voxelize coarsest lod PLY (default); use lod0 for max detail
 #   SPLAT_COLLISION_MESH=faces     also emit collision.collision.glb (optional debug mesh)
 #   SPLAT_COLLISION_STRICT=1       stop batch on collision failure (default: warn and continue)
+#   SPLAT_COLLISION_MAX_EXTENT_M=120  skip voxel when post-prep scene span exceeds this (meters)
+#   SPLAT_COLLISION_TIMEOUT_MIN=90    per-scene collision time limit (0 = no limit)
+#   SPLAT_COLLISION_FILTER_CLUSTER=1  keep connected cluster at seed before voxel (GPU; default on)
+#   SPLAT_COLLISION_SPHERE_M=60       radial cull at seed (0/none = skip sphere filter)
+#   SPLAT_COLLISION_BOX_HALF_M=0      optional box half-size centered on seed (0/none = skip)
+#   SPLAT_COLLISION_BOX_Y_MIN=        optional box min Y (absolute); default seedY - box half
+#   SPLAT_COLLISION_BOX_Y_MAX=        optional box max Y (absolute); default seedY + box half
+#   SPLAT_COLLISION_FILTER_FLOATERS=1 optional GPU floater cull before voxel (default off)
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
@@ -65,6 +73,43 @@ $CollisionMesh = if ($env:SPLAT_COLLISION_MESH -and $env:SPLAT_COLLISION_MESH -n
     $null
 }
 $CollisionStrict = $env:SPLAT_COLLISION_STRICT -eq "1"
+$HeightmapEnabled = -not (
+    $env:SPLAT_HEIGHTMAP -eq "skip" -or
+    $env:SPLAT_HEIGHTMAP -eq "none" -or
+    $env:SPLAT_HEIGHTMAP -eq "0" -or
+    $env:SPLAT_HEIGHTMAP -eq "false"
+)
+$CollisionMaxExtentM = if ($env:SPLAT_COLLISION_MAX_EXTENT_M) {
+    [double]$env:SPLAT_COLLISION_MAX_EXTENT_M
+} else { 120.0 }
+$CollisionTimeoutMin = if ($env:SPLAT_COLLISION_TIMEOUT_MIN) {
+    [int]$env:SPLAT_COLLISION_TIMEOUT_MIN
+} else { 90 }
+$VoxelParamsUserSet = [bool]$env:SPLAT_VOXEL_PARAMS
+
+function Get-OptionalPositiveDouble {
+    param(
+        [string]$Value,
+        [double]$Default = 0
+    )
+    if (-not $Value -or $Value -eq "none" -or $Value -eq "0") { return 0.0 }
+    if ($Value -eq "default") { return $Default }
+    return [double]$Value
+}
+
+$CollisionFilterCluster = -not (
+    $env:SPLAT_COLLISION_FILTER_CLUSTER -eq "0" -or
+    $env:SPLAT_COLLISION_FILTER_CLUSTER -eq "skip" -or
+    $env:SPLAT_COLLISION_FILTER_CLUSTER -eq "false" -or
+    $env:SPLAT_COLLISION_FILTER_CLUSTER -eq "none"
+)
+$CollisionFilterFloaters = $env:SPLAT_COLLISION_FILTER_FLOATERS -eq "1"
+$CollisionSphereM = if ($env:SPLAT_COLLISION_SPHERE_M) {
+    Get-OptionalPositiveDouble $env:SPLAT_COLLISION_SPHERE_M
+} else { 60.0 }
+$CollisionBoxHalfM = Get-OptionalPositiveDouble $env:SPLAT_COLLISION_BOX_HALF_M
+$CollisionBoxYMin = if ($env:SPLAT_COLLISION_BOX_Y_MIN) { [double]$env:SPLAT_COLLISION_BOX_Y_MIN } else { $null }
+$CollisionBoxYMax = if ($env:SPLAT_COLLISION_BOX_Y_MAX) { [double]$env:SPLAT_COLLISION_BOX_Y_MAX } else { $null }
 
 function Write-BatchLog {
     param([string]$Message)
@@ -101,6 +146,155 @@ function Invoke-SplatTransform {
             throw "splat-transform failed (exit $code): $cmd`n$detail"
         }
         throw "splat-transform failed (exit $code): $cmd"
+    }
+}
+
+function Get-CollisionSeedCoords {
+    $parts = $CollisionSeedPos -split ","
+    if ($parts.Count -lt 3) { return @(0.0, 0.0, 0.0) }
+    return @(
+        [double]$parts[0].Trim(),
+        [double]$parts[1].Trim(),
+        [double]$parts[2].Trim()
+    )
+}
+
+function Get-SceneExtentM {
+    param($Summary)
+    $extent = 0.0
+    foreach ($axis in @("x", "y", "z")) {
+        $row = $Summary.Axes[$axis]
+        if (-not $row) { continue }
+        $span = $row.Max - $row.Min
+        if ($span -gt $extent) { $extent = $span }
+    }
+    return $extent
+}
+
+function Resolve-CollisionVoxelParams {
+    param(
+        [double]$ExtentM,
+        [string]$BaseParams
+    )
+    if ($VoxelParamsUserSet) { return $BaseParams }
+
+    $parts = $BaseParams -split ","
+    $size = [double]$parts[0]
+    $opacity = if ($parts.Count -gt 1) { $parts[1] } else { "0.12" }
+
+    # Auto-coarsen on medium/large scenes when the user did not set SPLAT_VOXEL_PARAMS.
+    if ($ExtentM -gt 50) {
+        $minSize = [math]::Ceiling(($ExtentM / 100) * 20) / 20
+        if ($minSize -gt $size) { $size = $minSize }
+    }
+
+    return ("{0},{1}" -f $size, $opacity)
+}
+
+function Stop-SplatTransformForOutput {
+    param([string]$OutputPath)
+    $leaf = Split-Path $OutputPath -Leaf
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.CommandLine -and
+        $_.CommandLine -like "*splat-transform*" -and
+        $_.CommandLine -like "*$leaf*"
+    } | ForEach-Object {
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-SplatTransformExecutable {
+    # Start-Process requires a real Win32 executable. npm's bare "splat-transform" name
+    # resolves to a .ps1 shim that works with & splat-transform but not Start-Process.
+    $cmdShim = Get-Command splat-transform.cmd -ErrorAction SilentlyContinue
+    if ($cmdShim) { return $cmdShim.Source }
+
+    $cmd = Get-Command splat-transform -ErrorAction Stop
+    if ($cmd.CommandType -eq 'Application') { return $cmd.Source }
+
+    if ($cmd.CommandType -eq 'ExternalScript') {
+        $cmdPath = [System.IO.Path]::ChangeExtension($cmd.Source, '.cmd')
+        if (Test-Path -LiteralPath $cmdPath) { return $cmdPath }
+        throw "Cannot resolve splat-transform for Start-Process (install @playcanvas/splat-transform globally)"
+    }
+
+    return $cmd.Source
+}
+
+function Invoke-SplatTransformTimed {
+    param(
+        [string[]]$SplatCliArgs,
+        [int]$TimeoutMinutes = 0,
+        [switch]$StreamProgress
+    )
+
+    if ($TimeoutMinutes -le 0) {
+        Invoke-SplatTransform -SplatCliArgs $SplatCliArgs -StreamProgress:$StreamProgress
+        return
+    }
+
+    $stderrFile = Join-Path $env:TEMP ("splat-transform-{0}.err.log" -f [guid]::NewGuid().ToString("n"))
+    $stdoutFile = Join-Path $env:TEMP ("splat-transform-{0}.out.log" -f [guid]::NewGuid().ToString("n"))
+    $outputPath = $SplatCliArgs[-1]
+
+    try {
+        $splatExe = Get-SplatTransformExecutable
+        $proc = Start-Process -FilePath $splatExe `
+            -ArgumentList $SplatCliArgs `
+            -NoNewWindow -PassThru `
+            -RedirectStandardError $stderrFile `
+            -RedirectStandardOutput $stdoutFile
+
+        $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+        $lastLen = 0L
+
+        while (-not $proc.HasExited) {
+            if ((Get-Date) -gt $deadline) {
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+                if ($outputPath -like "*.voxel.json") {
+                    Stop-SplatTransformForOutput -OutputPath $outputPath
+                }
+                throw "splat-transform timed out after $TimeoutMinutes minutes"
+            }
+
+            if ($StreamProgress -and (Test-Path -LiteralPath $stderrFile)) {
+                try {
+                    $stream = [System.IO.File]::Open(
+                        $stderrFile,
+                        [System.IO.FileMode]::Open,
+                        [System.IO.FileAccess]::Read,
+                        [System.IO.FileShare]::ReadWrite
+                    )
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    $null = $stream.Seek($lastLen, [System.IO.SeekOrigin]::Begin)
+                    while (-not $reader.EndOfStream) {
+                        $line = $reader.ReadLine()
+                        if ($line -and $line.Trim()) {
+                            Write-Host "      $line"
+                        }
+                    }
+                    $lastLen = $stream.Position
+                    $reader.Close()
+                    $stream.Close()
+                } catch {
+                    # File may be locked briefly while splat-transform writes.
+                }
+            }
+
+            Start-Sleep -Seconds 2
+        }
+
+        # npm .cmd wrappers often leave ExitCode unset ($null); treat that as success.
+        $exitCode = $proc.ExitCode
+        if ($null -ne $exitCode -and $exitCode -ne 0) {
+            $detail = ""
+            if (Test-Path $stderrFile) {
+                $detail = (Get-Content $stderrFile -Raw -ErrorAction SilentlyContinue)
+            }
+            throw "splat-transform failed (exit $exitCode)`n$detail"
+        }
+    } finally {
+        Remove-Item $stderrFile, $stdoutFile -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -227,24 +421,105 @@ function Ensure-Dir {
     New-Item -ItemType Directory -Force -Path $Path | Out-Null
 }
 
+function Prepare-CollisionSourcePly {
+    param(
+        [string]$InputPath,
+        [string]$OutputPath,
+        [string]$BaseName,
+        [string]$InputLabel
+    )
+
+    $inputCountM = Get-GaussianCountM $InputPath
+    $seedX, $seedY, $seedZ = Get-CollisionSeedCoords
+
+    $prepParts = @()
+    if ($CollisionFilterCluster) { $prepParts += "cluster" }
+    if ($CollisionSphereM -gt 0) { $prepParts += ("sphere={0}m" -f $CollisionSphereM) }
+    if ($CollisionBoxHalfM -gt 0) { $prepParts += ("boxHalf={0}m" -f $CollisionBoxHalfM) }
+    if ($CollisionFilterFloaters) { $prepParts += "floaters" }
+    $prepLabel = if ($prepParts.Count -gt 0) { $prepParts -join ", " } else { "none" }
+
+    Write-Host "[4a/4] collision prep -> collision-src.ply"
+    Write-Host ("      input={0} ({1}M gaussians)" -f $InputLabel, $inputCountM)
+    Write-Host ("      filters: {0}; seed={1}" -f $prepLabel, $CollisionSeedPos)
+
+    $prepArgs = @("-w", $InputPath)
+
+    if ($CollisionFilterCluster) {
+        $prepArgs += @("--filter-cluster", "--seed-pos", $CollisionSeedPos)
+    }
+
+    if ($CollisionSphereM -gt 0) {
+        $prepArgs += @(
+            "-S",
+            ("{0},{1},{2},{3}" -f $seedX, $seedY, $seedZ, $CollisionSphereM)
+        )
+    }
+
+    if ($CollisionBoxHalfM -gt 0) {
+        $yMin = if ($null -ne $CollisionBoxYMin) { $CollisionBoxYMin } else { $seedY - $CollisionBoxHalfM }
+        $yMax = if ($null -ne $CollisionBoxYMax) { $CollisionBoxYMax } else { $seedY + $CollisionBoxHalfM }
+        $box = ("{0},{1},{2},{3},{4},{5}" -f `
+            ($seedX - $CollisionBoxHalfM), $yMin, ($seedZ - $CollisionBoxHalfM), `
+            ($seedX + $CollisionBoxHalfM), $yMax, ($seedZ + $CollisionBoxHalfM))
+        $prepArgs += @("-B", $box)
+        Write-Host ("      box=[{0}]" -f $box)
+    }
+
+    if ($CollisionFilterFloaters) {
+        $prepArgs += "-G"
+    }
+
+    $prepArgs += $OutputPath
+
+    try {
+        Invoke-SplatTransform -SplatCliArgs $prepArgs
+    } catch {
+        $msg = $_.Exception.Message
+        Write-BatchLog "  WARNING $BaseName : collision prep failed - $msg"
+        Write-Host "      WARNING: collision prep failed (LOD bundle is still valid)"
+        if ($CollisionStrict) { throw }
+        return $null
+    }
+
+    if (-not (Test-Path $OutputPath)) {
+        Write-BatchLog "  WARNING $BaseName : collision prep produced no output file"
+        if ($CollisionStrict) { throw "collision prep missing output: $OutputPath" }
+        return $null
+    }
+
+    $summary = Get-SplatSummary $OutputPath
+    $extentM = Get-SceneExtentM $summary
+    Write-Host ("      prep result: {0}M gaussians, extent={1:N1}m" -f $summary.CountM, $extentM)
+    Write-BatchLog ("  {0} collision prep: {1} -> collision-src.ply ({2}M, extent={3:N1}m, filters={4})" -f `
+        $BaseName, $InputLabel, $summary.CountM, $extentM, $prepLabel)
+    return $summary
+}
+
 function Build-CollisionVoxel {
     param(
         [string]$SourcePath,
         [string]$CollisionJsonPath,
         [string]$BaseName,
-        [string]$SourceLabel
+        [string]$SourceLabel,
+        [double]$SceneExtentM,
+        [string]$VoxelParamsForScene = $VoxelParams
     )
 
     $sourceCountM = Get-GaussianCountM $SourcePath
-    Write-Host "[4/4] voxel collision -> $CollisionJsonPath"
+    Write-Host "[4b/4] voxel collision -> $CollisionJsonPath"
     Write-Host ("      source={0} ({1}M gaussians)" -f $SourceLabel, $sourceCountM)
-    Write-Host "      params=$VoxelParams seed=$CollisionSeedPos floor-fill=$VoxelFloorFill"
-    Write-Host '      (slow step - splat-transform progress streams below; often 10-45 min on large splats)'
-    Write-BatchLog ("  {0} collision start: source={1} ({2}M), voxel={3}" -f $BaseName, $SourceLabel, $sourceCountM, $VoxelParams)
+    Write-Host ("      extent={0:N1}m params={1} seed={2} floor-fill={3}" -f $SceneExtentM, $VoxelParamsForScene, $CollisionSeedPos, $VoxelFloorFill)
+    if ($CollisionTimeoutMin -gt 0) {
+        Write-Host "      timeout=${CollisionTimeoutMin}m"
+    }
+    Write-Host '      (slow step - splat-transform progress streams below)'
+    Write-BatchLog ("  {0} collision start: source={1} ({2}M), extent={3:N1}m, voxel={4}, timeout={5}m" -f `
+        $BaseName, $SourceLabel, $sourceCountM, $SceneExtentM, $VoxelParamsForScene, $CollisionTimeoutMin)
 
     $voxelArgs = @(
         "-w", $SourcePath,
-        "--voxel-params", $VoxelParams,
+        "--voxel-params", $VoxelParamsForScene,
         "--seed-pos", $CollisionSeedPos
     )
 
@@ -259,7 +534,7 @@ function Build-CollisionVoxel {
     $voxelArgs += $CollisionJsonPath
 
     try {
-        Invoke-SplatTransform -SplatCliArgs $voxelArgs -StreamProgress
+        Invoke-SplatTransformTimed -SplatCliArgs $voxelArgs -TimeoutMinutes $CollisionTimeoutMin -StreamProgress
     } catch {
         $msg = $_.Exception.Message
         Write-BatchLog "  WARNING $BaseName : collision voxel failed - $msg"
@@ -284,10 +559,55 @@ function Build-CollisionVoxel {
     return $true
 }
 
+function Build-HeightmapFromVoxel {
+    param(
+        [string]$CollisionJsonPath,
+        [string]$BaseName
+    )
+
+    if (-not $HeightmapEnabled) {
+        Write-Host "[4c/4] heightmap skipped (SPLAT_HEIGHTMAP=skip)"
+        Write-BatchLog "  $BaseName heightmap skipped (SPLAT_HEIGHTMAP)"
+        return $false
+    }
+
+    $heightmapJson = Join-Path (Split-Path $CollisionJsonPath) "heightmap.json"
+    $extractScript = Join-Path $RepoRoot "scripts/splat/extract-heightmap.mjs"
+    $cellArgs = @()
+    if ($env:SPLAT_HEIGHTMAP_CELL) {
+        $cellArgs = @("--cell", $env:SPLAT_HEIGHTMAP_CELL)
+    }
+
+    Write-Host "[4c/4] heightmap -> $heightmapJson"
+    Write-BatchLog "  $BaseName heightmap start -> $heightmapJson"
+
+    try {
+        & node $extractScript --voxel $CollisionJsonPath --out $heightmapJson @cellArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "extract-heightmap exited with code $LASTEXITCODE"
+        }
+    } catch {
+        $msg = $_.Exception.Message
+        Write-BatchLog "  WARNING $BaseName : heightmap failed - $msg"
+        Write-Host "      WARNING: heightmap extraction failed"
+        if ($env:SPLAT_HEIGHTMAP_STRICT -eq "1") { throw }
+        return $false
+    }
+
+    Write-BatchLog "  $BaseName heightmap -> $heightmapJson"
+    return $true
+}
+
 Ensure-Dir (Join-Path $RepoRoot "work")
 $rotationLog = if ($SplatRotation) { $SplatRotation } else { "none" }
 $collisionLog = if ($CollisionEnabled) {
-    "on (source=$CollisionSourceMode, voxel=$VoxelParams, floor=$VoxelFloorFill)"
+    $prep = @()
+    if ($CollisionFilterCluster) { $prep += "cluster" }
+    if ($CollisionSphereM -gt 0) { $prep += "sphere${CollisionSphereM}m" }
+    if ($CollisionBoxHalfM -gt 0) { $prep += "box${CollisionBoxHalfM}m" }
+    if ($CollisionFilterFloaters) { $prep += "floaters" }
+    $prepText = if ($prep.Count -gt 0) { $prep -join "+" } else { "none" }
+    "on (source=$CollisionSourceMode, prep=$prepText, voxel=$VoxelParams, floor=$VoxelFloorFill, maxExtent=${CollisionMaxExtentM}m post-prep, timeout=${CollisionTimeoutMin}m)"
 } else {
     "skip"
 }
@@ -317,7 +637,7 @@ foreach ($input in $inputs) {
     Write-BatchLog "Processing $base ($($input.Name))"
 
     $lod0 = Join-Path $lodDir "lod0.ply"
-    $null = Repair-PlayCanvasSplatData -InputPath $input.FullName -Lod0Path $lod0 -BaseName $base
+    $lod0Summary = Repair-PlayCanvasSplatData -InputPath $input.FullName -Lod0Path $lod0 -BaseName $base
 
     $lodFiles = @($lod0)
     $countM = Get-GaussianCountM $lod0
@@ -350,17 +670,50 @@ foreach ($input in $inputs) {
 
     if ($CollisionEnabled) {
         $collisionJson = Join-Path $outDir "collision.voxel.json"
-        $collisionSource = if ($CollisionSourceMode -eq "lod0" -or $CollisionSourceMode -eq "fine") {
+        $collisionInput = if ($CollisionSourceMode -eq "lod0" -or $CollisionSourceMode -eq "fine") {
             $lod0
         } else {
             $lodFiles[-1]
         }
-        $collisionSourceLabel = [System.IO.Path]::GetFileName($collisionSource)
-        $null = Build-CollisionVoxel `
-            -SourcePath $collisionSource `
-            -CollisionJsonPath $collisionJson `
+        $collisionInputLabel = [System.IO.Path]::GetFileName($collisionInput)
+        $collisionSrc = Join-Path $lodDir "collision-src.ply"
+
+        $prepSummary = Prepare-CollisionSourcePly `
+            -InputPath $collisionInput `
+            -OutputPath $collisionSrc `
             -BaseName $base `
-            -SourceLabel $collisionSourceLabel
+            -InputLabel $collisionInputLabel
+
+        if ($prepSummary) {
+            if (-not $prepSummary.CountM -or $prepSummary.CountM -le 0) {
+                Write-Host "[4b/4] collision skipped (prep produced 0 gaussians)"
+                Write-BatchLog "  $base collision skipped: prep produced 0 gaussians"
+            } else {
+                $prepExtentM = Get-SceneExtentM $prepSummary
+                if ($prepExtentM -gt $CollisionMaxExtentM) {
+                    Write-Host "[4b/4] collision skipped (prep extent $([math]::Round($prepExtentM,1))m > max ${CollisionMaxExtentM}m)"
+                    Write-BatchLog ("  {0} collision skipped: prep extent {1:N1}m > SPLAT_COLLISION_MAX_EXTENT_M ({2}m)" -f `
+                        $base, $prepExtentM, $CollisionMaxExtentM)
+                } else {
+                    $voxelParamsForScene = Resolve-CollisionVoxelParams -ExtentM $prepExtentM -BaseParams $VoxelParams
+                    if ($voxelParamsForScene -ne $VoxelParams) {
+                        Write-Host ("      auto voxel params -> {0} (prep extent {1:N1}m)" -f $voxelParamsForScene, $prepExtentM)
+                    }
+                    $voxelOk = Build-CollisionVoxel `
+                        -SourcePath $collisionSrc `
+                        -CollisionJsonPath $collisionJson `
+                        -BaseName $base `
+                        -SourceLabel "collision-src.ply" `
+                        -SceneExtentM $prepExtentM `
+                        -VoxelParamsForScene $voxelParamsForScene
+                    if ($voxelOk) {
+                        $null = Build-HeightmapFromVoxel `
+                            -CollisionJsonPath $collisionJson `
+                            -BaseName $base
+                    }
+                }
+            }
+        }
     } else {
         Write-Host "[4/4] collision voxel skipped (SPLAT_COLLISION=skip)"
         Write-BatchLog "  $base collision skipped (SPLAT_COLLISION)"

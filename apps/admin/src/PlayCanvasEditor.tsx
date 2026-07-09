@@ -667,6 +667,7 @@ export default function PlayCanvasEditor() {
           flyOnMarkerClick: false,
           startPos: loadState.startPos,
           showStartAxes: isFieldManagement,
+          groundClamp: { enabled: false },
           onLoadProgress: ({ hint, progress }) => {
             if (cancelled) return;
             setOverlayHint(hint);

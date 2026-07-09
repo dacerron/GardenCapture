@@ -7,7 +7,6 @@ import {
   DEFAULT_CAMERA_POSITION,
   DEFAULT_FOCUS_POINT,
   isMobileLikeControls,
-  resetPlayCanvasCamera,
 } from "./mobileCamera";
 import { createCameraInputGate } from "./cameraInputGate";
 import { setupEditorMarkerGizmo, type MarkerEditHandlers } from "./editorMarkerGizmo";
@@ -22,15 +21,20 @@ import {
   getDefaultPerformancePreset,
   getSplatBudgetM,
 } from "./performancePresets";
-import { createGroundCollider } from "./ground/groundCollider";
-import {
-  clampPositionToGround,
-  setupCameraGroundClamp,
-} from "./ground/cameraGroundClamp";
-import { resolveCollisionUrl } from "./ground/resolveCollisionUrl";
-import type { GroundClampConfig } from "./ground/types";
-import { cameraFramingFromStartPos } from "@soil/shared/utils/startPos";
 import { DEFAULT_MARKER_RADIUS } from "@soil/shared/markers/editorMarkers";
+import { applySplatOrientationX } from "./applySplatOrientation";
+import { resetCameraFromStartPos } from "./spawnCamera";
+import { mapLegacyStoredPosition } from "./sceneCoordinates";
+import { setupCameraHeightClamp } from "./heightmap/cameraHeightClamp";
+import {
+  createHeightmapGroundCollider,
+  createPositionClamp,
+  type CameraPositionClamp,
+} from "./heightmap/heightmapCollider";
+import { createHeightmapQuery } from "./heightmap/heightmapQuery";
+import { loadHeightmap } from "./heightmap/loadHeightmap";
+import { resolveHeightmapUrl } from "./heightmap/resolveHeightmapUrl";
+import type { HeightmapGroundClampConfig } from "./heightmap/types";
 
 /** Matches legacy mkkellogg viewer flip in GaussianViewer.ts (rotation [1,0,0,0]). */
 export const DEFAULT_ORIENTATION_X = 180;
@@ -67,8 +71,8 @@ export type PlayCanvasAppOptions = {
   /** Scene origin / orbit pivot (`start_pos` from DynamoDB). */
   startPos?: [number, number, number];
   showStartAxes?: boolean;
-  /** Keep the camera above the splat surface (AABB fallback; voxel when available). */
-  groundClamp?: GroundClampConfig;
+  /** Keep the camera above a precomputed ground heightmap when available. */
+  groundClamp?: HeightmapGroundClampConfig;
 };
 
 export type PlayCanvasApp = {
@@ -127,14 +131,8 @@ export async function createPlayCanvasApp(
   } = options;
   const budgetM =
     splatBudgetM ?? getSplatBudgetM(performancePreset);
-  const { focus: startFocusTuple, position: startCameraTuple } =
-    cameraFramingFromStartPos(startPos);
-  const sceneFocus = new pc.Vec3(startFocusTuple[0], startFocusTuple[1], startFocusTuple[2]);
-  const sceneCameraPosition = new pc.Vec3(
-    startCameraTuple[0],
-    startCameraTuple[1],
-    startCameraTuple[2],
-  );
+  const sceneFocus = new pc.Vec3();
+  const sceneCameraPosition = new pc.Vec3();
 
   const reportLoad = (hint: string, progress: number | null) => {
     onLoadProgress?.({ hint, progress });
@@ -176,6 +174,17 @@ export async function createPlayCanvasApp(
   app.scene.gsplat.lodBehindPenalty = 3;
   app.scene.gsplat.radialSorting = true;
   app.scene.gsplat.splatBudget = Math.round(budgetM * 1_000_000);
+
+  const heightmapUrl =
+    groundClamp.enabled === false
+      ? null
+      : resolveHeightmapUrl(splatUrl, groundClamp.heightmapUrl);
+  const heightmapLoadPromise = heightmapUrl
+    ? loadHeightmap(heightmapUrl).catch((err) => {
+        console.warn("[heightmap] failed to load", err);
+        return null;
+      })
+    : Promise.resolve(null);
 
   const asset = new pc.Asset("gsplat", "gsplat", { url: splatUrl });
   app.assets.add(asset);
@@ -227,30 +236,12 @@ export async function createPlayCanvasApp(
 
   const splatEntity = new pc.Entity("splat");
   splatEntity.addComponent("gsplat", { asset });
-  splatEntity.setLocalEulerAngles(orientationX, 0, 0);
+  applySplatOrientationX(splatEntity, orientationX);
   app.root.addChild(splatEntity);
 
   const gsplat = splatEntity.gsplat;
   const resource = gsplat?.resource as { octree?: { lodLevels?: number } } | undefined;
   const lodLevels = resource?.octree?.lodLevels;
-
-  const groundCollider = createGroundCollider(splatEntity, groundClamp);
-  const clampCameraPosition = (position: pc.Vec3) =>
-    clampPositionToGround(position, groundCollider);
-  const groundClampHandle = setupCameraGroundClamp({
-    app,
-    cameraEntity: camera,
-    controls: controls ?? null,
-    collider: groundCollider,
-    enabled: groundClamp.enabled ?? true,
-  });
-
-  const collisionUrl = resolveCollisionUrl(splatUrl, groundClamp.collisionUrl);
-  if (collisionUrl) {
-    void groundCollider.loadVoxelCollision(collisionUrl).catch((err) => {
-      console.warn("[ground] failed to load voxel collision", err);
-    });
-  }
 
   const waitForInteractive = new Promise<void>((resolve) => {
     if (!lodLevels) {
@@ -296,10 +287,49 @@ export async function createPlayCanvasApp(
   });
 
   await waitForInteractive;
-  groundCollider.refreshAabbFallback();
-  groundClampHandle.clampNow();
-  resetPlayCanvasCamera(camera, controls ?? null, sceneFocus, sceneCameraPosition);
-  groundClampHandle.clampNow();
+
+  const heightmapData = await heightmapLoadPromise;
+  let clampCameraPosition: CameraPositionClamp | null = null;
+  let heightClampHandle: { clampNow(): boolean; destroy(): void } = {
+    clampNow: () => false,
+    destroy() {},
+  };
+
+  if (heightmapData && groundClamp.enabled !== false) {
+    const filledCells = heightmapData.heights.filter(
+      (v) => v > heightmapData.meta.sentinel + 1,
+    ).length;
+    console.info(
+      "[heightmap] loaded",
+      heightmapUrl,
+      `(${heightmapData.meta.coordinateSpace ?? "voxel-grid"}, ${filledCells} cells)`,
+    );
+    const heightQuery = createHeightmapQuery(heightmapData);
+    const heightCollider = createHeightmapGroundCollider({
+      query: heightQuery,
+      splatEntity,
+      eyeHeight: groundClamp.eyeHeight,
+      surfaceClearance: groundClamp.surfaceClearance,
+    });
+    clampCameraPosition = createPositionClamp(heightCollider);
+    heightClampHandle = setupCameraHeightClamp({
+      app,
+      cameraEntity: camera,
+      controls: controls ?? null,
+      collider: heightCollider,
+      enabled: true,
+    });
+  }
+
+  resetCameraFromStartPos({
+    cameraEntity: camera,
+    controls: controls ?? null,
+    startPos,
+    splatEntity,
+    sceneFocus,
+    sceneCameraPosition,
+  });
+  heightClampHandle.clampNow();
   reportLoad("Finalizing virtual soil...", 1);
 
   const cameraInputGate = createCameraInputGate(controls ?? null);
@@ -346,15 +376,17 @@ export async function createPlayCanvasApp(
   const setStartAxesPosition = (position: [number, number, number]) => {
     currentStartPos = position;
     startPosGizmoHandle?.setPosition(position);
+  };
 
-    const { focus, position: cameraTuple } = cameraFramingFromStartPos(position);
-    sceneFocus.set(focus[0], focus[1], focus[2]);
-    sceneCameraPosition.set(cameraTuple[0], cameraTuple[1], cameraTuple[2]);
-    if (controls) {
-      Object.assign(controls, {
-        focusPoint: new pc.Vec3(focus[0], focus[1], focus[2]),
-      });
-    }
+  const applyStartPosCameraFraming = () => {
+    resetCameraFromStartPos({
+      cameraEntity: camera,
+      controls: controls ?? null,
+      startPos: currentStartPos,
+      splatEntity,
+      sceneFocus,
+      sceneCameraPosition,
+    });
   };
 
   const markersHandle = setupPlayCanvasMarkers({
@@ -368,6 +400,7 @@ export async function createPlayCanvasApp(
     flyOnMarkerClick,
     cameraControlHooks: cameraInputGate.hooks,
     clampCameraPosition,
+    splatEntity,
   });
 
   return {
@@ -375,8 +408,8 @@ export async function createPlayCanvasApp(
       markersHandle.flyToMarker(index);
     },
     resetCamera() {
-      resetPlayCanvasCamera(camera, controls ?? null, sceneFocus, sceneCameraPosition);
-      groundClampHandle.clampNow();
+      applyStartPosCameraFraming();
+      heightClampHandle.clampNow();
     },
     setControlMode(mode: ControlMode) {
       applyCameraControlMode(controls ?? null, mode);
@@ -447,13 +480,14 @@ export async function createPlayCanvasApp(
         markerGizmoHandle.setEditing(false, null);
         return;
       }
+      const gizmoPosition = mapLegacyStoredPosition(position, splatEntity);
 
       const radius = markersHandle.getMarkerRadius(index) ?? undefined;
 
       markersHandle.setHotspotPointerEvents(index, false);
       markerEditHotspotIndex = index;
 
-      markerGizmoHandle.setEditing(true, position, {
+      markerGizmoHandle.setEditing(true, gizmoPosition, {
         onChange: (nextPosition) => {
           markersHandle.setMarkerPosition(index, nextPosition);
           handlers?.onChange?.(nextPosition);
@@ -465,17 +499,17 @@ export async function createPlayCanvasApp(
       }, radius);
     },
     setMarkerGizmoPosition(position) {
-      markerGizmoHandle?.setPosition(position);
+      const gizmoPosition = mapLegacyStoredPosition(position, splatEntity);
+      markerGizmoHandle?.setPosition(gizmoPosition);
     },
     setMarkerGizmoRadius(radius) {
       markerGizmoHandle?.setRadius(radius);
     },
     destroy() {
+      heightClampHandle.destroy();
       markersHandle.destroy();
       markerGizmoHandle?.destroy();
       startPosGizmoHandle?.destroy();
-      groundClampHandle.destroy();
-      groundCollider.destroy();
       skyboxHandle.destroy();
       window.removeEventListener("resize", onResize);
       app.destroy();

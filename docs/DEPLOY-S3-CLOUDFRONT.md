@@ -6,6 +6,7 @@ It replaces the previous single-app flow (one `dist/`, one site bucket, Amplify,
 
 **Related docs**
 
+- Production viewer URLs per field: [`VIEWER-SPLAT-LINKS.md`](./VIEWER-SPLAT-LINKS.md)
 - App architecture: [`DECOUPLED-APPS.md`](./DECOUPLED-APPS.md)
 - Terraform / HCP runbook (lab repo): `terraform-setup-template/docs/virtual-soils-hcp-deployment.md`
 - Infrastructure pointer: [`../terraform/README.md`](../terraform/README.md)

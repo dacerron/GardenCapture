@@ -7,6 +7,7 @@ import {
   getDefaultPerformancePreset,
   normalizeSplatUrl,
   parseOrientationX,
+  parseGroundClampEnabled,
   PLAYCANVAS_PERF_PRESET_LABELS,
   type PlayCanvasApp,
 } from "@soil/playcanvas-viewer";
@@ -177,7 +178,10 @@ export default function PlayCanvasViewer() {
           splatUrl: normalizeSplatUrl(splatUrl),
           sceneInfo: getFieldSceneInfo(field),
           orientationX,
-          startPos: parseStartPos(field.start_pos) ?? DEFAULT_START_POS,
+          startPos:
+            parseStartPosQueryParam(searchParams.get("startPos")) ??
+            parseStartPos(field.start_pos) ??
+            DEFAULT_START_POS,
           markers: getNavigableMarkersFromField(field),
         });
       } catch (err) {
@@ -224,6 +228,9 @@ export default function PlayCanvasViewer() {
           markerOverlayParent: overlayParent,
           defaultControlMode: controlModeRef.current,
           performancePreset: performancePresetRef.current,
+          groundClamp: {
+            enabled: parseGroundClampEnabled(searchParams),
+          },
           onLoadProgress: ({ hint, progress }) => {
             if (cancelled) return;
             setOverlayHint(hint);

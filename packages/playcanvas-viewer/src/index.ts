@@ -7,6 +7,7 @@ export {
 } from "./createPlayCanvasApp";
 export { normalizeSplatUrl } from "./normalizeSplatUrl";
 export { parseOrientationX } from "./parseOrientation";
+export { parseGroundClampEnabled } from "./parseGroundClamp";
 export { DEFAULT_SKYBOX_URL } from "./setupSkybox";
 export {
   getDefaultPerformancePreset,
