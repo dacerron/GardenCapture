@@ -9,6 +9,7 @@ import {
   parseFullSplatMode,
   parseOrientationX,
   parseGroundClampEnabled,
+  parseSkyboxMode,
   parseSplatBudgetOverrideM,
   parseSplatLodLock,
   PLAYCANVAS_PERF_PRESET_LABELS,
@@ -126,6 +127,7 @@ export default function PlayCanvasViewer() {
   const directUrl = searchParams.get("url")?.trim() ?? "";
   const fullSplatMode = parseFullSplatMode(searchParams);
   const orientationX = parseOrientationX(searchParams.get("orientation"));
+  const skyboxMode = parseSkyboxMode(searchParams);
   const splatBudgetOverrideM = parseSplatBudgetOverrideM(searchParams);
   const lockLodLevel = parseSplatLodLock(searchParams);
 
@@ -288,6 +290,7 @@ export default function PlayCanvasViewer() {
             ? { splatBudgetM: splatBudgetOverrideM }
             : {}),
           ...(lockLodLevel !== undefined ? { lockLodLevel } : {}),
+          skyboxMode,
           groundClamp: {
             enabled: loadState.fullSplatMode
               ? ["1", "true", "yes"].includes(
@@ -331,7 +334,7 @@ export default function PlayCanvasViewer() {
       playCanvasAppRef.current = null;
       app?.destroy();
     };
-  }, [loadState, splatBudgetOverrideM, lockLodLevel]);
+  }, [loadState, splatBudgetOverrideM, lockLodLevel, skyboxMode]);
 
   function handlePerformancePresetChange(preset: PerformancePreset) {
     setPerformancePreset(preset);

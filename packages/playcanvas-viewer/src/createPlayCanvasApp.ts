@@ -13,7 +13,8 @@ import { setupEditorMarkerGizmo, type MarkerEditHandlers } from "./editorMarkerG
 import { GIZMO_AXIS_LENGTH, START_AXIS_LENGTH } from "./editorAxisVisual";
 import { setupEditorOverlayLayer } from "./editorOverlayLayer";
 import { setupPlayCanvasMarkers, type PlacementPreviewState } from "./setupAnnotations";
-import { setupPlayCanvasSkybox, SKYBOX_GROUND_COLOR } from "./setupSkybox";
+import { setupPlayCanvasSkybox, skyboxClearColor } from "./setupSkybox";
+import type { SkyboxMode } from "./parseSkyboxMode";
 import type { ControlMode } from "@soil/shared/three/ScreenSpace";
 import type { PerformancePreset } from "@soil/shared/three/ScreenSpace";
 import {
@@ -65,8 +66,10 @@ export type PlayCanvasAppOptions = {
   onMarkerClick?: (index: number) => void;
   /** Fly camera when a hotspot is clicked (viewer default). */
   flyOnMarkerClick?: boolean;
-  /** Equirectangular sky texture URL. Omit for default HDR; pass `null` to disable. */
+  /** Equirectangular sky texture URL. Omit for default HDR; pass `null` to disable. Ignored when `skyboxMode` is `blue`. */
   skyboxUrl?: string | null;
+  /** `blue` = solid blue surround for transparency A/B (`?skybox=blue`). */
+  skyboxMode?: SkyboxMode;
   /** Desktop camera mode. Ignored on mobile/coarse pointer (always orbit). */
   defaultControlMode?: ControlMode;
   /** Optional loading UI updates while the splat scene is prepared. */
@@ -130,6 +133,7 @@ export async function createPlayCanvasApp(
     onMarkerClick,
     flyOnMarkerClick = !onMarkerClick,
     skyboxUrl,
+    skyboxMode = "default",
     defaultControlMode = "orbit",
     onLoadProgress,
     startPos = [0, 0, 0],
@@ -214,7 +218,7 @@ export async function createPlayCanvasApp(
 
   const camera = new pc.Entity("camera");
   camera.addComponent("camera", {
-    clearColor: SKYBOX_GROUND_COLOR.clone(),
+    clearColor: skyboxClearColor(skyboxMode),
     fov: 75,
     toneMapping: pc.TONEMAP_LINEAR,
   });
@@ -222,7 +226,10 @@ export async function createPlayCanvasApp(
   app.root.addChild(camera);
   camera.lookAt(DEFAULT_FOCUS_POINT);
 
-  const skyboxHandle = setupPlayCanvasSkybox(app, camera, skyboxUrl);
+  const skyboxHandle = setupPlayCanvasSkybox(app, camera, {
+    skyboxUrl,
+    mode: skyboxMode,
+  });
 
   camera.addComponent("script");
   const controls = camera.script?.create(CameraControls) as InstanceType<

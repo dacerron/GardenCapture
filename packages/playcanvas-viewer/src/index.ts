@@ -10,6 +10,7 @@ export { parseOrientationX } from "./parseOrientation";
 export { parseGroundClampEnabled } from "./parseGroundClamp";
 export { parseSplatBudgetOverrideM, parseSplatLodLock } from "./parseSplatBudget";
 export { parseFullSplatMode } from "./parseFullSplatMode";
+export { parseSkyboxMode, type SkyboxMode } from "./parseSkyboxMode";
 export { looksLikePlyHeader, urlLooksLikePly } from "./plyHeader";
 export {
   getDevFullSplatProxyUrl,
@@ -18,7 +19,13 @@ export {
   resolveFullSplatPlayCanvasUrl,
   type ResolveFullSplatResult,
 } from "./resolveFullSplatPlayCanvasUrl";
-export { DEFAULT_SKYBOX_URL, SKYBOX_FADE_END, SKYBOX_FADE_START, SKYBOX_GROUND_COLOR } from "./setupSkybox";
+export {
+  DEFAULT_SKYBOX_URL,
+  SKYBOX_FADE_END,
+  SKYBOX_FADE_START,
+  SKYBOX_GROUND_COLOR,
+  SOLID_BLUE_SKYBOX_COLOR,
+} from "./setupSkybox";
 export {
   getDefaultPerformancePreset,
   getSplatBudgetM,
