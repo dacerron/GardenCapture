@@ -1,6 +1,6 @@
-# Virtual Soils
+# coFood Digital Twin
 
-Web application for exploring 3D Gaussian splat reconstructions of soil and landscape sites. Users browse locations on an interactive map (Leaflet), open an embedded 3D viewer, and (for authorized users) manage sites and in-scene markers via an admin panel and editor.
+Web application for exploring 3D Gaussian splat reconstructions of garden and landscape sites. Users open an embedded 3D viewer (and optionally browse locations on a map), and authorized stewards manage sites and in-scene markers via an admin panel and editor.
 
 ---
 
@@ -133,16 +133,9 @@ Both apps call the **same API Gateway base URL** with different client env var n
 
 ## Terraform / infrastructure
 
-Infrastructure is **not defined in this repo**. It lives in the EML lab Terraform repo:
+Infrastructure is **not defined in this repo**. Provision Cognito, DynamoDB, Lambda, API Gateway, an assets bucket (+ CDN), and two static-site modules (viewer + admin S3/CloudFront) under **your** AWS account / Terraform workspace. Application build env vars (`VITE_*`) and deploy env vars (`VIEWER_SITE_BUCKET`, `ADMIN_SITE_BUCKET`, distribution IDs, `ASSETS_BUCKET`) must be supplied from those outputs — this fork ships with **no** baked-in legacy hosting IDs.
 
-- **Project path:** `terraform-setup-template/projects/ubc-eml/virtual-soils/`
-- **HCP Terraform workspace:** `ubc-eml-virtual-soils` (org **EML**)
-- **Region / account:** `ca-central-1`, AWS account `940309384764`
-
-Terraform provisions Cognito, DynamoDB, Lambda, API Gateway, assets bucket (+ CDN), and two static-site modules (viewer + admin S3/CloudFront). Application build env vars (`VITE_*`) come from HCP **outputs** after apply.
-
-**HCP apply runbook:** `terraform-setup-template/docs/virtual-soils-hcp-deployment.md` (lab repo)  
-**IAM policy templates:** `terraform-setup-template/docs/iam/` (lab repo)
+If a required variable is missing, deploy and upload scripts **exit with an error** naming the variable.
 
 Typical outputs used by this app:
 
@@ -197,7 +190,19 @@ Cognito callback/logout URLs in Terraform must include `http://localhost:5174/` 
 | `npm run typecheck` | TypeScript project references |
 | `npm run lint` | ESLint |
 
-Production deploy: build each app, `aws s3 sync` to the matching site bucket, CloudFront invalidation. See [`docs/DEPLOY-S3-CLOUDFRONT.md`](docs/DEPLOY-S3-CLOUDFRONT.md).
+Production deploy (requires env vars):
+
+```bash
+export VIEWER_SITE_BUCKET=...
+export VIEWER_CLOUDFRONT_DISTRIBUTION_ID=...
+./deploy_viewer.sh
+
+export ADMIN_SITE_BUCKET=...
+export ADMIN_CLOUDFRONT_DISTRIBUTION_ID=...
+./deploy_admin.sh
+```
+
+See [`docs/DEPLOY-S3-CLOUDFRONT.md`](docs/DEPLOY-S3-CLOUDFRONT.md).
 
 ---
 
@@ -214,7 +219,7 @@ Production deploy: build each app, `aws s3 sync` to the matching site bucket, Cl
 | [`scripts/splat/README.md`](scripts/splat/README.md) | Convert `.ksplat` → SOG / streamed LOD |
 | [`docs/PROJECT.md`](docs/PROJECT.md) | Feature-level app behavior (some sections predate decoupling) |
 | [`docs/SPLAT-CACHING.md`](docs/SPLAT-CACHING.md) | S3 `Cache-Control` for splat objects |
-| [`docs/virtual-soils-scope.md`](docs/virtual-soils-scope.md) | Product scope and roadmap |
+| [`docs/cofood-scope.md`](docs/cofood-scope.md) | Product scope and roadmap |
 | [`docs/eml-context.md`](docs/eml-context.md) | EML project context |
 
 ---

@@ -1,10 +1,10 @@
-# Virtual Soils Scope Document
+# coFood Scope Document
 
 ## Project context
 
-**Project:** Virtual Soils (web-based map + 3D soil scene explorer)
+**Project:** coFood (web-based map + 3D garden / landscape scene explorer)
 
-This scope covers the next four months of development for the existing Virtual Soils application. The current product foundation (map, embedded 3D viewer, editor, and admin workflow) is in place; this phase focuses on improving core user experience, creating meaningful learning content, and making the app usable on mobile devices.
+This scope covers the next four months of development for the existing coFood application. The current product foundation (map, embedded 3D viewer, editor, and admin workflow) is in place; this phase focuses on improving core user experience, creating meaningful learning content, and making the app usable on mobile devices.
 
 ---
 

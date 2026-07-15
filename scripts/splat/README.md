@@ -1,6 +1,6 @@
 # Converting `.ksplat` → PlayCanvas formats
 
-Virtual Soils production splats are **`.ksplat`** (mkkellogg / `@mkkellogg/gaussian-splats-3d`). PlayCanvas Engine loads **`.sog`** or **streamed LOD** (`lod-meta.json` + chunk folders).
+Production splats in this stack start as **`.ksplat`** (mkkellogg / `@mkkellogg/gaussian-splats-3d`). PlayCanvas Engine loads **`.sog`** or **streamed LOD** (`lod-meta.json` + chunk folders).
 
 Tool: [`@playcanvas/splat-transform`](https://github.com/playcanvas/splat-transform) (reads `.ksplat`; does not write `.ksplat`).
 
@@ -25,11 +25,12 @@ splat-transform --list-gpus
 
 ## 2. Get a source file
 
-Download from assets CDN or S3 (example bucket from prod):
+Download from your assets CDN or S3 (`ASSETS_BUCKET` must be set — there is no default bucket in this fork):
 
 ```bash
+: "${ASSETS_BUCKET:?error: set ASSETS_BUCKET to your assets S3 bucket name}"
 aws s3 cp \
-  s3://ubc-eml-virtual-soils-prod-assets-078d04/splats/UM_ResearchStation_01_WebHigh.ksplat \
+  "s3://${ASSETS_BUCKET}/splats/UM_ResearchStation_01_WebHigh.ksplat" \
   ./work/UM_ResearchStation_01_WebHigh.ksplat \
   --region ca-central-1
 ```
@@ -178,7 +179,7 @@ Adjust axis/angle if a specific scene still differs after comparing side-by-side
 
 ```bash
 aws s3 cp ./work/out/scene.sog \
-  s3://ubc-eml-virtual-soils-prod-assets-078d04/splats/sog/scene.sog \
+  s3://YOUR_ASSETS_BUCKET/splats/sog/scene.sog \
   --cache-control "public, max-age=31536000, immutable" \
   --region ca-central-1
 ```
@@ -187,14 +188,15 @@ aws s3 cp ./work/out/scene.sog \
 
 ```bash
 chmod +x scripts/splat/sync-lod-to-s3.sh
-./scripts/splat/sync-lod-to-s3.sh UM_ResearchStation_01_WebHigh ubc-eml-virtual-soils-prod-assets-078d04
+: "${ASSETS_BUCKET:?error: set ASSETS_BUCKET}"
+./scripts/splat/sync-lod-to-s3.sh UM_ResearchStation_01_WebHigh "$ASSETS_BUCKET"
 ```
 
 Or manually:
 
 ```bash
 aws s3 sync ./work/out/UM_ResearchStation_01/ \
-  s3://ubc-eml-virtual-soils-prod-assets-078d04/splats/lod/UM_ResearchStation_01/ \
+  s3://YOUR_ASSETS_BUCKET/splats/lod/UM_ResearchStation_01/ \
   --cache-control "public, max-age=31536000, immutable" \
   --region ca-central-1
 ```

@@ -5,7 +5,7 @@
 #   ./scripts/splat/sync-all-lod-to-s3.sh <s3-bucket> [aws-region]
 #
 # Example:
-#   ./scripts/splat/sync-all-lod-to-s3.sh ubc-eml-virtual-soils-prod-assets-078d04
+#   ./scripts/splat/sync-all-lod-to-s3.sh "$ASSETS_BUCKET"
 #
 # Uploads each:
 #   work/out/<basename>/  ->  s3://<bucket>/splats/lod/<basename>/
@@ -16,16 +16,24 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 <s3-bucket> [aws-region]" >&2
-  echo "  s3-bucket  Assets bucket name without s3:// prefix" >&2
+  echo "Usage: $0 [s3-bucket] [aws-region]" >&2
+  echo "  s3-bucket  Assets bucket name without s3:// prefix (or set ASSETS_BUCKET)" >&2
   echo "  aws-region Optional. Default: ca-central-1" >&2
   exit 1
 }
 
-[[ $# -ge 1 && $# -le 2 ]] || usage
+if [[ $# -gt 2 ]]; then
+  usage
+fi
 
-BUCKET="$1"
+BUCKET="${1:-${ASSETS_BUCKET:-}}"
 REGION="${2:-ca-central-1}"
+
+if [[ -z "$BUCKET" ]]; then
+  echo "error: missing assets S3 bucket name" >&2
+  echo "Pass <s3-bucket> as the first argument, or export ASSETS_BUCKET." >&2
+  exit 1
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
