@@ -113,6 +113,14 @@ Set before running (optional):
 | `SPLAT_COLLISION_BOX_Y_MIN` | *(auto)* | Optional absolute min Y for collision box (default: seed Y − box half). |
 | `SPLAT_COLLISION_BOX_Y_MAX` | *(auto)* | Optional absolute max Y for collision box (default: seed Y + box half). |
 | `SPLAT_COLLISION_FILTER_FLOATERS` | *(off)* | Set to `1` for GPU `--filter-floaters` before voxel. |
+| `SPLAT_HEIGHTMAP` | *(on)* | Set to `skip` to skip heightmap extract after voxels. |
+| `SPLAT_HEIGHTMAP_CELL` | *(auto)* | Height grid cell size (m) for `extract-heightmap.mjs`. |
+| `SPLAT_HEIGHTMAP_WALKABLE_BAND_MIN` | `6` | Min band height (m) above grid floor. |
+| `SPLAT_HEIGHTMAP_WALKABLE_BAND_MAX` | `30` | Cap on band height (m). Lower to ignore mid-air haze. |
+| `SPLAT_HEIGHTMAP_WALKABLE_BAND_FRACTION` | `0.85` | Fraction of grid Y span used for the band. |
+| `SPLAT_HEIGHTMAP_WALKABLE_MAX_Y` | *(off)* | Absolute Y ceiling; overrides the band formula. |
+
+**Per-scene helper:** faint floaters on UM_05 — [`generate-um05-voxels.ps1`](generate-um05-voxels.ps1) (`-Force`, `-Opacity 0.3`, `-HeightmapOnly`, `-WalkableBandMaxM 12`).
 
 Example — re-run UBC Farm with defaults:
 

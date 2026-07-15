@@ -68,7 +68,7 @@ export type PlayCanvasAppOptions = {
   flyOnMarkerClick?: boolean;
   /** Equirectangular sky texture URL. Omit for default HDR; pass `null` to disable. Ignored when `skyboxMode` is `blue`. */
   skyboxUrl?: string | null;
-  /** `blue` = solid blue surround for transparency A/B (`?skybox=blue`). */
+  /** `blue` = solid blue; `infinite` = pre-fix wraparound cubemap (`?skybox=infinite`). */
   skyboxMode?: SkyboxMode;
   /** Desktop camera mode. Ignored on mobile/coarse pointer (always orbit). */
   defaultControlMode?: ControlMode;

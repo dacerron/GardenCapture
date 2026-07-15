@@ -8,6 +8,8 @@
  *
  * Usage:
  *   node scripts/splat/extract-heightmap.mjs --voxel work/out/Scene/collision.voxel.json
+ *   node scripts/splat/extract-heightmap.mjs --voxel … --walkable-band-max 12
+ *   node scripts/splat/extract-heightmap.mjs --voxel … --walkable-max-y 4.5
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -18,36 +20,123 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SENTINEL = -9999;
 const MAX_GRID_DIM = 512;
-const WALKABLE_BAND_MIN_M = 6;
-const WALKABLE_BAND_MAX_M = 30;
-const WALKABLE_BAND_FRACTION = 0.85;
+const DEFAULT_WALKABLE_BAND_MIN_M = 6;
+const DEFAULT_WALKABLE_BAND_MAX_M = 30;
+const DEFAULT_WALKABLE_BAND_FRACTION = 0.85;
+
+function parseOptionalNumber(value, flagName) {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    throw new Error(`${flagName} must be a finite number (got ${JSON.stringify(value)})`);
+  }
+  return n;
+}
 
 function parseArgs(argv) {
-  const args = { voxel: null, out: null, cell: null };
+  const args = {
+    voxel: null,
+    out: null,
+    cell: null,
+    walkableBandMinM: null,
+    walkableBandMaxM: null,
+    walkableBandFraction: null,
+    walkableMaxY: null,
+  };
+
   for (let i = 2; i < argv.length; i++) {
     const token = argv[i];
     if (token === "--voxel") args.voxel = argv[++i];
     else if (token === "--out") args.out = argv[++i];
-    else if (token === "--cell") args.cell = Number(argv[++i]);
-    else if (token === "--help" || token === "-h") {
-      console.log(`Usage: node scripts/splat/extract-heightmap.mjs --voxel <collision.voxel.json> [--out heightmap.json] [--cell 0.25]`);
+    else if (token === "--cell") {
+      args.cell = parseOptionalNumber(argv[++i], "--cell");
+    } else if (token === "--walkable-band-min" || token === "--walkable-band-min-m") {
+      args.walkableBandMinM = parseOptionalNumber(argv[++i], token);
+    } else if (token === "--walkable-band-max" || token === "--walkable-band-max-m") {
+      args.walkableBandMaxM = parseOptionalNumber(argv[++i], token);
+    } else if (token === "--walkable-band-fraction") {
+      args.walkableBandFraction = parseOptionalNumber(argv[++i], token);
+    } else if (token === "--walkable-max-y" || token === "--walkable-max-y-m") {
+      args.walkableMaxY = parseOptionalNumber(argv[++i], token);
+    } else if (token === "--help" || token === "-h") {
+      console.log(`Usage:
+  node scripts/splat/extract-heightmap.mjs --voxel <collision.voxel.json> [options]
+
+Options:
+  --out <heightmap.json>         Output path (default: beside voxel file)
+  --cell <meters>                Height grid cell size (default: max(voxelRes, 0.25))
+  --walkable-band-min <m>        Min band height above grid floor (default: ${DEFAULT_WALKABLE_BAND_MIN_M})
+  --walkable-band-max <m>        Cap on band height above grid floor (default: ${DEFAULT_WALKABLE_BAND_MAX_M})
+  --walkable-band-fraction <0-1> Fraction of grid Y span used for band (default: ${DEFAULT_WALKABLE_BAND_FRACTION})
+  --walkable-max-y <m>           Absolute splat-local / voxel-grid Y ceiling (overrides band formula)
+
+Env (used when the matching CLI flag is omitted):
+  SPLAT_HEIGHTMAP_CELL
+  SPLAT_HEIGHTMAP_WALKABLE_BAND_MIN
+  SPLAT_HEIGHTMAP_WALKABLE_BAND_MAX
+  SPLAT_HEIGHTMAP_WALKABLE_BAND_FRACTION
+  SPLAT_HEIGHTMAP_WALKABLE_MAX_Y`);
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${token}`);
     }
   }
+
   if (!args.voxel) throw new Error("--voxel is required");
+
+  if (args.cell == null && process.env.SPLAT_HEIGHTMAP_CELL) {
+    args.cell = parseOptionalNumber(process.env.SPLAT_HEIGHTMAP_CELL, "SPLAT_HEIGHTMAP_CELL");
+  }
+  if (args.walkableBandMinM == null) {
+    args.walkableBandMinM = parseOptionalNumber(
+      process.env.SPLAT_HEIGHTMAP_WALKABLE_BAND_MIN,
+      "SPLAT_HEIGHTMAP_WALKABLE_BAND_MIN",
+    ) ?? DEFAULT_WALKABLE_BAND_MIN_M;
+  }
+  if (args.walkableBandMaxM == null) {
+    args.walkableBandMaxM = parseOptionalNumber(
+      process.env.SPLAT_HEIGHTMAP_WALKABLE_BAND_MAX,
+      "SPLAT_HEIGHTMAP_WALKABLE_BAND_MAX",
+    ) ?? DEFAULT_WALKABLE_BAND_MAX_M;
+  }
+  if (args.walkableBandFraction == null) {
+    args.walkableBandFraction = parseOptionalNumber(
+      process.env.SPLAT_HEIGHTMAP_WALKABLE_BAND_FRACTION,
+      "SPLAT_HEIGHTMAP_WALKABLE_BAND_FRACTION",
+    ) ?? DEFAULT_WALKABLE_BAND_FRACTION;
+  }
+  if (args.walkableMaxY == null && process.env.SPLAT_HEIGHTMAP_WALKABLE_MAX_Y) {
+    args.walkableMaxY = parseOptionalNumber(
+      process.env.SPLAT_HEIGHTMAP_WALKABLE_MAX_Y,
+      "SPLAT_HEIGHTMAP_WALKABLE_MAX_Y",
+    );
+  }
+
+  if (!(args.walkableBandMinM > 0)) {
+    throw new Error("--walkable-band-min must be > 0");
+  }
+  if (!(args.walkableBandMaxM >= args.walkableBandMinM)) {
+    throw new Error("--walkable-band-max must be >= --walkable-band-min");
+  }
+  if (!(args.walkableBandFraction > 0 && args.walkableBandFraction <= 1)) {
+    throw new Error("--walkable-band-fraction must be in (0, 1]");
+  }
+
   return args;
 }
 
-function walkableMaxY(header) {
+function walkableMaxY(header, options) {
+  if (options.walkableMaxY != null) {
+    return options.walkableMaxY;
+  }
+
   const grid = header.gridBounds;
   const yMin = grid.min[1];
   const yMax = grid.max[1];
   const span = Math.max(0, yMax - yMin);
   const band = Math.min(
-    WALKABLE_BAND_MAX_M,
-    Math.max(WALKABLE_BAND_MIN_M, span * WALKABLE_BAND_FRACTION),
+    options.walkableBandMaxM,
+    Math.max(options.walkableBandMinM, span * options.walkableBandFraction),
   );
   return yMin + band;
 }
@@ -92,7 +181,7 @@ function readVoxelDataset(voxelJsonPath) {
   return { header, nodes, leafData, binPath };
 }
 
-function createHeightGrid(header, cellSize) {
+function createHeightGrid(header, cellSize, bandOptions) {
   const [minX, , minZ] = header.gridBounds.min;
   const [maxX, , maxZ] = header.gridBounds.max;
   const spanX = maxX - minX;
@@ -120,7 +209,8 @@ function createHeightGrid(header, cellSize) {
     depth,
     heights,
     fallbackHeights,
-    walkableMaxY: walkableMaxY(header),
+    walkableMaxY: walkableMaxY(header, bandOptions),
+    bandOptions,
     maxX,
     maxZ,
   };
@@ -245,8 +335,8 @@ function finalizeHeights(grid) {
   return { walkableCells, fallbackCells };
 }
 
-function extractHeightmap(header, nodes, leafData, cellSize) {
-  const grid = createHeightGrid(header, cellSize);
+function extractHeightmap(header, nodes, leafData, cellSize, bandOptions) {
+  const grid = createHeightGrid(header, cellSize, bandOptions);
   const rootVs = 4 * (1 << header.treeDepth);
 
   if (nodes.length > 0) {
@@ -270,11 +360,18 @@ function writeHeightmap(outJsonPath, header, grid, stats) {
 
   writeFileSync(binPath, Buffer.from(grid.heights.buffer));
 
+  const band = grid.bandOptions;
   const meta = {
     version: 1,
     coordinateSpace: "voxel-grid",
     surface: "walkable-band-max",
     walkableMaxY: grid.walkableMaxY,
+    walkableBand: {
+      minM: band.walkableBandMinM,
+      maxM: band.walkableBandMaxM,
+      fraction: band.walkableBandFraction,
+      absoluteMaxY: band.walkableMaxY,
+    },
     origin: [grid.originX, grid.originZ],
     cellSize: grid.cellSize,
     width: grid.width,
@@ -299,12 +396,20 @@ function main() {
   const voxelPath = resolve(args.voxel);
   const outJsonPath = resolve(args.out ?? voxelPath.replace(/collision\.voxel\.json$/i, "heightmap.json"));
 
+  const bandOptions = {
+    walkableBandMinM: args.walkableBandMinM,
+    walkableBandMaxM: args.walkableBandMaxM,
+    walkableBandFraction: args.walkableBandFraction,
+    walkableMaxY: args.walkableMaxY,
+  };
+
   const { header, nodes, leafData } = readVoxelDataset(voxelPath);
   const { grid, filled, walkableCells, fallbackCells } = extractHeightmap(
     header,
     nodes,
     leafData,
     args.cell,
+    bandOptions,
   );
 
   if (filled === 0) {

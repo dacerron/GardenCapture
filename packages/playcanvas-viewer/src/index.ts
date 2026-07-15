@@ -21,6 +21,7 @@ export {
 } from "./resolveFullSplatPlayCanvasUrl";
 export {
   DEFAULT_SKYBOX_URL,
+  INFINITE_SKYBOX_CLEAR_COLOR,
   SKYBOX_FADE_END,
   SKYBOX_FADE_START,
   SKYBOX_GROUND_COLOR,
