@@ -2,7 +2,10 @@
 
 **Prepared for:** Sponsors, partners, and leadership  
 **Site:** coFood Collaborative Garden, 265 East 4th Ave, Vancouver  
-**Status:** Draft
+**Status:** Draft  
+
+**Implementation plan:** [`cofood-digital-twin-implementation-plan.md`](./cofood-digital-twin-implementation-plan.md) (Phases 1–4 detail)  
+**Near-term student window:** [`docs/cofood-scope.md`](./docs/cofood-scope.md)
 
 ---
 
@@ -24,6 +27,8 @@ This project creates a **living digital twin**: an immersive, web-based walkthro
 | **4 — Share & replicate** | Extend impact beyond coFood | Public launch, educational exports, playbook for other gardens |
 
 **Near-term priority (2026):** Complete Phase 1 and a usable Phase 2 in time to document the **compost infrastructure transformation** already underway — not only the finished site, but the process of change.
+
+**First capture event:** **21 July 2026** — on-site images and video at the garden (detail in [`docs/cofood-scope.md`](./docs/cofood-scope.md)).
 
 ---
 
@@ -47,7 +52,7 @@ We are **building on this coFood codebase** — a forked monorepo that already s
 ## Work required (summary)
 
 ### Capture & platform (Phase 1)
-- On-site photography and 3D processing of the garden  
+- On-site photography and video (**21 July 2026** event) and 3D processing of the garden  
 - Cloud hosting and a public web experience  
 - First navigable digital twin online  
 
@@ -74,7 +79,7 @@ We are **building on this coFood codebase** — a forked monorepo that already s
 |---|----------|
 | **Total effort** | ~770–1,130 hours (technical + content + capture) |
 | **Duration** | ~12–18 months for full scope; **public MVP target: fall 2026** |
-| **Team** | Part-time technical lead, developer or student contributor, steward/content leads |
+| **Team** | Part-time technical lead, EML students (**≤30 hours each**), steward/content leads |
 | **Hosting** | ~$50–200/month initially (scales with traffic and media) |
 
 Phases 1–2 (~460–660 hours) deliver the highest-value preservation and education outcomes and should be prioritized if budget is constrained.

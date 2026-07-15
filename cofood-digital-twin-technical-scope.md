@@ -8,6 +8,9 @@
 
 **Codebase:** this monorepo — web-based Gaussian splat viewer with map, 3D navigation, hotspot markers, admin, and editor tooling
 
+**Implementation plan:** [`cofood-digital-twin-implementation-plan.md`](./cofood-digital-twin-implementation-plan.md)  
+**Near-term student window:** [`docs/cofood-scope.md`](./docs/cofood-scope.md)
+
 ---
 
 ## 1. Executive summary
@@ -283,221 +286,23 @@ Tour {
 
 ---
 
-## 6. Phase-by-phase technical scope
+## 6. Implementation plan
 
-Aligned with the project proposal. Each phase lists deliverables, engineering work, content work, and acceptance criteria.
+Phase-by-phase deliverables, effort ranges, capacity rules (including the **30-hour EML student** cap), and the 2026–2027 milestone schedule live in:
 
----
+**→ [`cofood-digital-twin-implementation-plan.md`](./cofood-digital-twin-implementation-plan.md)**
 
-### Phase 1 — Spatial capture
+Near-term student delivery (iteration windows inside Phase 1 / early Phase 2):
 
-**Timeline:** Q2–Q3 2026 (parallel with compost site transformation)
+**→ [`docs/cofood-scope.md`](./docs/cofood-scope.md)**
 
-**Objective:** Produce a web-optimized Gaussian splat of the garden and stand up hosting for the first public viewer.
-
-#### 6.1.1 Capture production (non-code)
-
-| Task | Detail |
-|------|--------|
-| Ground photography | Multi-angle coverage of paths, beds, compost zones, structures |
-| Drone imagery | Site context and canopy where permitted and safe |
-| Splat processing | Train/export Gaussian splat; iterate on quality vs. file size |
-| Coordinate alignment | Consistent origin so hotspots remain meaningful within a capture |
-| Metadata | Capture date, weather/season notes, changelog for compost rebuild |
-
-**Target splat specs (initial):**
-
-- Format compatible with `@mkkellogg/gaussian-splats-3d` (`.ksplat` or `.ply`)
-- Web-optimized build: progressive loading or compressed variant where supported
-- Initial budget: ≤ 150 MB per capture (tune based on QA); quality presets in viewer for low-end mobile
-
-#### 6.1.2 Engineering deliverables
-
-| Deliverable | Description |
-|-------------|-------------|
-| Platform baseline | coFood-branded viewer + admin (this repo) on new AWS infra |
-| Infrastructure | S3 assets bucket, viewer CloudFront, API stub, DynamoDB tables |
-| Capture upload pipeline | Steward uploads splat to S3; admin registers `Capture` record |
-| MVP viewer | Load single capture, fly navigation, loading overlay, mobile smoke test |
-| About / context page | Garden overview, accessibility statement, credits |
-
-#### 6.1.3 Acceptance criteria
-
-- [ ] A steward can upload a splat and open it in the public viewer via URL
-- [ ] Viewer loads on desktop Chrome, Safari, Firefox and one mid-range mobile device
-- [ ] Fly controls documented for first-time visitors (on-screen help)
-- [ ] Capture metadata (date, label) visible in the UI
-
-#### 6.1.4 Estimated effort
-
-| Area | Hours (order of magnitude) |
-|------|---------------------------|
-| Capture production (photo, process, QA) | 80–120 |
-| Platform fork + infra setup | 60–80 |
-| MVP viewer integration | 40–60 |
-| **Phase 1 total** | **180–260** |
+Product phases (for reference): **1 Spatial capture → 2 Interactive layer → 3 Storytelling archive → 4 Knowledge sharing**.
 
 ---
 
-### Phase 2 — Interactive layer
+## 7. Infrastructure and operations
 
-**Timeline:** Q3–Q4 2026
-
-**Objective:** Hotspots with multimedia, compost education content, and steward authoring workflows.
-
-#### 6.2.1 Engineering deliverables
-
-| Deliverable | Priority | Description |
-|-------------|----------|-------------|
-| Hotspot panel UI | P0 | Click hotspot → side panel or modal with title, summary, media |
-| Multimedia rendering | P0 | Image gallery, inline audio player, embedded or linked video |
-| Media upload (admin) | P0 | Presigned S3 upload; attach assets to hotspots |
-| Hotspot content types | P1 | Templates for compost system, plant, oral history, event |
-| Tagging and filtering | P1 | Filter hotspot list by tag (e.g. show all compost hotspots) |
-| Capture switcher | P1 | Toggle between captures (e.g. pre/post compost) |
-| Mobile responsive UI | P0 | Readable panels, touch-friendly controls |
-| SEO / shareable links | P2 | Deep link to capture + optional hotspot id |
-| Guided tour (basic) | P2 | Linear tour: jump camera between ordered hotspots |
-
-#### 6.2.2 Content deliverables (parallel track)
-
-| Content pack | Hotspots (approx.) |
-|--------------|-------------------|
-| Garden orientation | 5–8 (welcome, paths, gathering areas) |
-| Compost systems | 8–12 (one per method + workflow/maintainance) |
-| Growing areas | 6–10 (beds, perennials, notable plants) |
-| Structures & tools | 4–6 (shed, water, signage) |
-| Events & programs | 4–6 (Music in the Garden, workshops) |
-
-Content production includes copy, photos, diagrams, and at least **3–5 short audio clips** (oral history pilots).
-
-#### 6.2.3 API changes
-
-- `GET /captures/:id/hotspots` — public hotspots for a capture
-- `POST /admin/api/hotspots` — CRUD with media references
-- `POST /admin/api/media/upload-url` — presigned POST
-- Extend editor: media picker, content type, tags, visibility toggle
-
-#### 6.2.4 Acceptance criteria
-
-- [ ] Steward places hotspot in editor and attaches image + audio without developer help
-- [ ] Public visitor clicks compost drum hotspot and sees diagram, maintenance steps, and optional audio
-- [ ] At least two captures published with working capture switcher
-- [ ] All public hotspot media served over HTTPS via CDN
-- [ ] Panel usable on phone (readable text, playable audio)
-
-#### 6.2.5 Estimated effort
-
-| Area | Hours |
-|------|-------|
-| Hotspot multimedia UI + API | 80–120 |
-| Admin media upload + editor extensions | 60–80 |
-| Capture switcher + tagging | 30–40 |
-| Content authoring (curated packs) | 80–120 |
-| QA + mobile pass | 30–40 |
-| **Phase 2 total** | **280–400** |
-
----
-
-### Phase 3 — Storytelling & living archive
-
-**Timeline:** Q4 2026 – Q2 2027
-
-**Objective:** Oral history collection, community submissions, steward moderation, and steward-only archive tier.
-
-#### 6.3.1 Engineering deliverables
-
-| Deliverable | Priority | Description |
-|-------------|----------|-------------|
-| Contribution form | P0 | Public form: text, file upload, optional location note |
-| Moderation queue | P0 | Admin list: approve → creates/links hotspot |
-| Role-based visibility | P0 | `public` vs `stewards` hotspots and captures |
-| Transcript field | P1 | Text alongside audio/video for accessibility |
-| Timeline view | P1 | Chronological index of stories and captures |
-| Oral history workflow | P1 | Batch import template; consent checkbox on submit |
-| Search | P2 | Full-text search across hotspot titles and summaries |
-
-#### 6.3.2 Governance (non-code, required)
-
-| Policy | Purpose |
-|--------|---------|
-| Media consent form | Permission to publish voices and likenesses |
-| Moderation guidelines | What stewards approve for public vs. archive-only |
-| Attribution standard | Contributor name on approved stories |
-| Retention / takedown | Process for removal requests |
-
-#### 6.3.3 Acceptance criteria
-
-- [ ] Contributor submits memory with photo; steward approves and it appears on the site
-- [ ] Steward-only hotspot visible only when logged in
-- [ ] At least 10 oral history clips published with transcripts
-- [ ] Timeline page lists major 2026 garden events and captures
-
-#### 6.3.4 Estimated effort
-
-| Area | Hours |
-|------|-------|
-| Contribution + moderation system | 80–100 |
-| Visibility roles + archive UI | 40–60 |
-| Timeline + search | 40–60 |
-| Oral history intake + content | 60–100 |
-| **Phase 3 total** | **220–320** |
-
----
-
-### Phase 4 — Knowledge sharing & replication
-
-**Timeline:** Q2–Q3 2027
-
-**Objective:** Public launch, replication documentation, and open components for other community projects.
-
-#### 6.4.1 Engineering deliverables
-
-| Deliverable | Description |
-|-------------|-------------|
-| Launch hardening | Performance, error monitoring, analytics (privacy-respecting) |
-| Replication guide | How to fork, capture, host, and author content |
-| Compost documentation export | Static PDF or microsite generated from hotspot content |
-| Optional open-source release | Sanitized repo + `packages/shared` as reusable splat+hotspot library |
-| Exhibition mode | Kiosk-friendly fullscreen + guided tour autoplay |
-
-#### 6.4.2 Acceptance criteria
-
-- [ ] Public launch URL promoted with stable uptime
-- [ ] Replication doc enables a technical partner to deploy a second site
-- [ ] Compost education pack downloadable for Fraser Lowland partners
-- [ ] Launch event demo: live guided tour on projector + mobile
-
-#### 6.4.3 Estimated effort
-
-| Area | Hours |
-|------|-------|
-| Hardening + monitoring | 30–50 |
-| Documentation + open-source prep | 40–60 |
-| Exhibition mode + launch support | 20–40 |
-| **Phase 4 total** | **90–150** |
-
----
-
-## 7. Consolidated effort summary
-
-Assumes **1 technical lead (part-time)** + **1 student or contract developer** + **content/steward team** for media.
-
-| Phase | Engineering | Content / capture | Total (range) |
-|-------|-------------|---------------------|---------------|
-| 1 — Spatial capture | 100–140 | 80–120 | 180–260 |
-| 2 — Interactive layer | 170–240 | 80–120 | 280–400 |
-| 3 — Storytelling archive | 160–220 | 60–100 | 220–320 |
-| 4 — Knowledge sharing | 90–150 | 20–40 | 90–150 |
-| **Grand total** | **520–750** | **240–380** | **770–1,130** |
-
-At 20 hours/week engineering, Phases 1–2 are roughly **4–6 months**; the full scope is roughly **12–18 months** depending on sponsorship, capture cadence, and content volume.
-
----
-
-## 8. Infrastructure and operations
-
-### 8.1 AWS resources (estimated monthly, modest traffic)
+### 7.1 AWS resources (estimated monthly, modest traffic)
 
 | Service | Purpose |
 |---------|---------|
@@ -510,7 +315,7 @@ At 20 hours/week engineering, Phases 1–2 are roughly **4–6 months**; the ful
 
 **Cost drivers:** splat and video storage, CloudFront egress. Budget **$50–200/month** for early public launch; scale with traffic and media volume.
 
-### 8.2 Environments
+### 7.2 Environments
 
 | Environment | Use |
 |-------------|-----|
@@ -518,14 +323,14 @@ At 20 hours/week engineering, Phases 1–2 are roughly **4–6 months**; the ful
 | `staging` | Steward QA, capture preview |
 | `production` | Public viewer |
 
-### 8.3 Backup and preservation
+### 7.3 Backup and preservation
 
 - S3 versioning enabled on assets bucket
 - DynamoDB point-in-time recovery
 - **Cold archive:** annual export of all captures + metadata to a preservation bucket (proposal aligns with long-term community memory goals)
 - Document splat source files and capture raw imagery offline in steward custody
 
-### 8.4 Security
+### 7.4 Security
 
 - No long-lived AWS keys in the browser (address known auth debt via backend signing or Cognito Identity Pool)
 - Presigned uploads with type and size limits
@@ -535,7 +340,7 @@ At 20 hours/week engineering, Phases 1–2 are roughly **4–6 months**; the ful
 
 ---
 
-## 9. Accessibility
+## 8. Accessibility
 
 | Requirement | Approach |
 |-------------|----------|
@@ -547,7 +352,7 @@ At 20 hours/week engineering, Phases 1–2 are roughly **4–6 months**; the ful
 
 ---
 
-## 10. Risks and mitigations
+## 9. Risks and mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
@@ -561,7 +366,7 @@ At 20 hours/week engineering, Phases 1–2 are roughly **4–6 months**; the ful
 
 ---
 
-## 11. Dependencies
+## 10. Dependencies
 
 | Dependency | Owner | Needed by |
 |------------|-------|-----------|
@@ -575,20 +380,13 @@ At 20 hours/week engineering, Phases 1–2 are roughly **4–6 months**; the ful
 
 ---
 
-## 12. Suggested milestone schedule (2026–2027)
+## 11. Milestone schedule
 
-| Date | Milestone |
-|------|-----------|
-| **Jun 2026** | Platform fork live in staging; first ground capture during compost prep |
-| **Aug 2026** | Public MVP: single splat, 10+ text/image hotspots, compost zone started |
-| **Oct 2026** | Second capture (post-rebuild); capture switcher; audio hotspots |
-| **Jan 2027** | Contribution form + moderation; steward archive |
-| **Spring 2027** | Timeline, 20+ oral histories, guided tour |
-| **Summer 2027** | Public launch, replication docs, exhibition kit |
+See **Suggested milestone schedule** in [`cofood-digital-twin-implementation-plan.md`](./cofood-digital-twin-implementation-plan.md).
 
 ---
 
-## 13. Success criteria (project-level)
+## 12. Success criteria (project-level)
 
 1. **Preservation:** A high-fidelity navigable record of the 2026 garden exists and remains accessible after physical site change.
 2. **Education:** Compost systems are documented so an external community could replicate the approach.
@@ -598,7 +396,7 @@ At 20 hours/week engineering, Phases 1–2 are roughly **4–6 months**; the ful
 
 ---
 
-## 14. Open decisions
+## 13. Open decisions
 
 Record stakeholder choices before Phase 2 kickoff:
 
@@ -613,7 +411,7 @@ Record stakeholder choices before Phase 2 kickoff:
 
 ---
 
-## 15. Appendix A — Component reuse matrix
+## 14. Appendix A — Component reuse matrix
 
 | Existing asset | Reuse | Modify | Replace |
 |----------------|-------|--------|---------|
@@ -630,7 +428,7 @@ Record stakeholder choices before Phase 2 kickoff:
 
 ---
 
-## 16. Appendix B — Compost content template (authoring)
+## 15. Appendix B — Compost content template (authoring)
 
 Each compost hotspot should support a consistent structure for replication value:
 

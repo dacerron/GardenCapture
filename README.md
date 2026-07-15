@@ -219,7 +219,9 @@ See [`docs/DEPLOY-S3-CLOUDFRONT.md`](docs/DEPLOY-S3-CLOUDFRONT.md).
 | [`scripts/splat/README.md`](scripts/splat/README.md) | Convert `.ksplat` → SOG / streamed LOD |
 | [`docs/PROJECT.md`](docs/PROJECT.md) | Feature-level app behavior (some sections predate decoupling) |
 | [`docs/SPLAT-CACHING.md`](docs/SPLAT-CACHING.md) | S3 `Cache-Control` for splat objects |
-| [`docs/cofood-scope.md`](docs/cofood-scope.md) | Product scope and roadmap |
+| [`cofood-digital-twin-implementation-plan.md`](cofood-digital-twin-implementation-plan.md) | Product phases 1–4, effort, milestones |
+| [`docs/cofood-scope.md`](docs/cofood-scope.md) | Near-term EML student window (maps into Phase 1 / early Phase 2) |
+| [`cofood-digital-twin-technical-scope.md`](cofood-digital-twin-technical-scope.md) | Architecture, data model, infra |
 | [`docs/eml-context.md`](docs/eml-context.md) | EML project context |
 
 ---
