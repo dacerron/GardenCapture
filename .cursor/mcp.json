@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tree-sitter-analyzer": {
+      "command": "uvx",
+      "args": ["--from", "tree-sitter-analyzer[mcp]", "tree-sitter-analyzer-mcp"],
+      "env": { "TREE_SITTER_PROJECT_ROOT": "c:/Users/dcerron1/Dev/25---1002-SOIL-SCIENCE" }
+    }
+  }
+}
