@@ -7,6 +7,7 @@
 #   SPLAT_POSITION_OUTLIER_M=200   trigger position crop when |coord| exceeds this
 #   SPLAT_POSITION_BOX_HALF_M=150  half-extent of symmetric crop box (-N..N per axis)
 #   SPLAT_ROTATION=180,0,0         optional Euler degrees for -r (not applied by default)
+#   SPLAT_DECIMATE_DEVICE=cpu      decimate device: auto (GPU+CPU fallback, default)|cpu|<gpu idx>
 #   SPLAT_COLLISION=skip           skip collision.voxel.json generation (default: on)
 #   SPLAT_VOXEL_PARAMS=0.1,0.12    voxel size + opacity threshold (coarser = faster)
 #   SPLAT_VOXEL_FLOOR_FILL=1.6     floor-fill patch size (m); use "none" to skip
@@ -46,6 +47,16 @@ $SplatRotation = if ($env:SPLAT_ROTATION -and $env:SPLAT_ROTATION -ne "none" -an
     $env:SPLAT_ROTATION
 } else {
     $null
+}
+
+# Device for the --decimate KNN pass. The GPU path (WebGPU/D3D12) can hang the driver on
+# large inputs (DXGI_ERROR_DEVICE_HUNG / "WebGPU device lost"). "auto" (default) tries the
+# GPU and falls back to CPU on such failures; "cpu" forces the CPU KD-tree path from the
+# start (slower but avoids the GPU hang entirely); a GPU index (e.g. "0") pins an adapter.
+$DecimateDevice = if ($env:SPLAT_DECIMATE_DEVICE) {
+    $env:SPLAT_DECIMATE_DEVICE.ToLowerInvariant()
+} else {
+    "auto"
 }
 
 # Remove Gaussians with -Infinity log-scale (PlayCanvas renders these as screen-filling blobs).
@@ -146,6 +157,38 @@ function Invoke-SplatTransform {
             throw "splat-transform failed (exit $code): $cmd`n$detail"
         }
         throw "splat-transform failed (exit $code): $cmd"
+    }
+}
+
+function Invoke-Decimate {
+    param(
+        [string]$InputPath,
+        [string]$OutputPath
+    )
+    $baseArgs = @("-w", $InputPath, "--decimate", "50%", $OutputPath)
+
+    # Explicit override (cpu / GPU index): run once, honour the user's choice, no fallback.
+    if ($DecimateDevice -ne "auto") {
+        Write-Host "      device=$DecimateDevice (SPLAT_DECIMATE_DEVICE)"
+        Invoke-SplatTransform -SplatCliArgs (@("-g", $DecimateDevice) + $baseArgs) -StreamProgress
+        return
+    }
+
+    # Default: try GPU, then fall back to the CPU KD-tree path if the GPU KNN hangs the
+    # driver. Capture output (no -StreamProgress) so we can inspect the failure message.
+    try {
+        Invoke-SplatTransform -SplatCliArgs $baseArgs
+    } catch {
+        $msg = $_.Exception.Message
+        if ($msg -match "device lost|DEVICE_HUNG|DEVICE_REMOVED|copyBufferToBuffer|WebGPU|GetDeviceRemovedReason") {
+            $firstLine = ($msg -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+            Write-BatchLog "  decimate GPU pass failed ($firstLine); retrying on CPU (-g cpu)"
+            Write-Host "      GPU decimate failed (device hang) - retrying on CPU (-g cpu, slower)"
+            Remove-Item $OutputPath -Force -ErrorAction SilentlyContinue
+            Invoke-SplatTransform -SplatCliArgs (@("-g", "cpu") + $baseArgs) -StreamProgress
+        } else {
+            throw
+        }
     }
 }
 
@@ -614,11 +657,11 @@ $collisionLog = if ($CollisionEnabled) {
 Write-BatchLog "=== batch-lod-from-temp start (outlier>${PositionOutlierThresholdM}m -> box +/-${PositionBoxHalfExtentM}m, rotation=$rotationLog, collision=$collisionLog) ==="
 
 $inputs = Get-ChildItem -Path $TempDir -File |
-    Where-Object { $_.Extension -match '^\.(ksplat|splat|ply)$' } |
+    Where-Object { $_.Extension -match '^\.(ksplat|splat|ply|sog)$' } |
     Sort-Object Name
 
 if ($inputs.Count -eq 0) {
-    Write-Error "No .ksplat/.splat/.ply files in $TempDir"
+    Write-Error "No .ksplat/.splat/.ply/.sog files in $TempDir"
 }
 
 Write-Host "Processing $($inputs.Count) splat(s) from $TempDir"
@@ -649,7 +692,7 @@ foreach ($input in $inputs) {
         $prev = $lodFiles[-1]
         $next = Join-Path $lodDir "lod$step.ply"
         Write-Host "[2/4] decimate -> lod$step.ply"
-        Invoke-SplatTransform -SplatCliArgs @("-w", $prev, "--decimate", "50%", $next)
+        Invoke-Decimate -InputPath $prev -OutputPath $next
         $lodFiles += $next
         $countM = Get-GaussianCountM $next
         Write-Host "      lod$step : ${countM}M gaussians"

@@ -10,8 +10,10 @@
 # Uploads each:
 #   work/out/<basename>/  ->  s3://<bucket>/splats/lod/<basename>/
 #
-# Skips subfolders that lack lod-meta.json. After upload, invalidate CloudFront
-# for /splats/lod/* if objects use immutable cache headers.
+# Skips subfolders that lack lod-meta.json. sync-lod-to-s3.sh splits cache headers:
+# LOD chunk folders are immutable, top-level metadata (lod-meta.json, heightmap.*,
+# collision.*) is short/revalidatable. When re-exporting existing bundles, still
+# invalidate CloudFront because immutable chunk keys are reused across exports.
 
 set -euo pipefail
 
@@ -81,4 +83,9 @@ if [[ ${#failed[@]} -gt 0 ]]; then
 fi
 
 echo "Done. Synced ${#bundles[@]} bundle(s)."
-echo "Invalidate CloudFront: /splats/lod/*"
+echo ""
+echo "If you re-exported existing bundles, invalidate the immutable chunks on the"
+echo "assets CloudFront distribution (metadata revalidates on its own):"
+echo "  aws cloudfront create-invalidation \\"
+echo "    --distribution-id E38XHXEPV282TQ \\"
+echo "    --paths \"/splats/lod/*\""

@@ -5,6 +5,7 @@ import {
   createPlayCanvasApp,
   getDefaultPerformancePreset,
   normalizeSplatUrl,
+  parseFlyZoomEnabled,
   parseOrientationX,
   type PlayCanvasApp,
 } from "@soil/playcanvas-viewer";
@@ -187,6 +188,7 @@ export default function PlayCanvasEditor() {
     searchParams.get("path")?.trim() ||
     "";
   const orientationX = parseOrientationX(searchParams.get("orientation"));
+  const flyZoom = parseFlyZoomEnabled(searchParams);
 
   controlModeRef.current = controlMode;
 
@@ -767,6 +769,7 @@ export default function PlayCanvasEditor() {
           startViewPosition: loadState.startViewPosition,
           showStartAxes: isFieldManagement,
           groundClamp: { enabled: false },
+          flyZoom,
           onLoadProgress: ({ hint, progress }) => {
             if (cancelled) return;
             setOverlayHint(hint);
@@ -803,7 +806,7 @@ export default function PlayCanvasEditor() {
       playCanvasAppRef.current = null;
       app?.destroy();
     };
-  }, [loadState, openMarker, isFieldManagement]);
+  }, [loadState, openMarker, isFieldManagement, flyZoom]);
 
   useEffect(() => {
     const app = playCanvasAppRef.current;
@@ -1026,15 +1029,16 @@ export default function PlayCanvasEditor() {
               aria-label="Camera control mode"
             >
               {([
-                ["fly", "Fly"],
-                ["orbit", "Orbit"],
-              ] as const).map(([nextMode, label]) => (
+                ["fly", "Fly", "WASD move, drag to look (scroll-wheel FOV zoom with ?flyZoom=1)"],
+                ["orbit", "Orbit", "Drag to orbit, right-drag to pan, wheel to dolly zoom"],
+              ] as const).map(([nextMode, label, title]) => (
                 <button
                   key={nextMode}
                   type="button"
                   role="tab"
                   aria-selected={controlMode === nextMode}
                   className={controlMode === nextMode ? "active" : ""}
+                  title={title}
                   onClick={() => handleControlModeChange(nextMode)}
                 >
                   {label}

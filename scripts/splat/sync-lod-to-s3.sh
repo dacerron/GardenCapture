@@ -45,17 +45,61 @@ if [[ ! -f "$SOURCE_DIR/lod-meta.json" ]]; then
   exit 1
 fi
 
+# Top-level sidecar/manifest files. These keep the same object key when a scene is
+# re-exported, so a long "immutable" cache would serve stale data. Upload them with a
+# short, revalidatable cache instead. Everything else (the numbered LOD chunk folders)
+# is bulky and re-fetched on demand, so it stays immutable.
+METADATA_FILES=(
+  "lod-meta.json"
+  "heightmap.json"
+  "heightmap.bin"
+  "collision.voxel.json"
+  "collision.voxel.bin"
+  "collision.collision.glb"
+)
+
+IMMUTABLE_CACHE="public, max-age=31536000, immutable"
+METADATA_CACHE="public, max-age=60, must-revalidate"
+
 echo "Syncing streamed LOD bundle"
 echo "  from: $SOURCE_DIR"
 echo "  to:   $S3_PREFIX"
 echo "  region: $REGION"
 echo ""
 
+# Pass 1: immutable chunks (everything except the top-level metadata files).
+immutable_excludes=()
+for f in "${METADATA_FILES[@]}"; do
+  immutable_excludes+=(--exclude "$f")
+done
+
+echo "-> immutable chunks ($IMMUTABLE_CACHE)"
 aws s3 sync "$SOURCE_DIR/" "$S3_PREFIX" \
-  --cache-control "public, max-age=31536000, immutable" \
+  --cache-control "$IMMUTABLE_CACHE" \
+  "${immutable_excludes[@]}" \
+  --region "$REGION"
+
+# Pass 2: revalidatable metadata (only the top-level manifest/sidecar files).
+metadata_includes=(--exclude "*")
+for f in "${METADATA_FILES[@]}"; do
+  metadata_includes+=(--include "$f")
+done
+
+echo ""
+echo "-> revalidatable metadata ($METADATA_CACHE)"
+aws s3 sync "$SOURCE_DIR/" "$S3_PREFIX" \
+  --cache-control "$METADATA_CACHE" \
+  "${metadata_includes[@]}" \
   --region "$REGION"
 
 echo ""
 echo "Done."
 echo "FilePlayCanvas path: splats/lod/$BASENAME/lod-meta.json"
 echo "Full URL: https://{assets_cdn}/splats/lod/$BASENAME/lod-meta.json"
+echo ""
+echo "Note: 'aws s3 sync' only re-uploads changed files, so unchanged metadata keeps"
+echo "its previous cache header. When re-exporting an existing bundle, invalidate the"
+echo "immutable chunks (their keys are reused) on the assets CloudFront distribution:"
+echo "  aws cloudfront create-invalidation \\"
+echo "    --distribution-id E38XHXEPV282TQ \\"
+echo "    --paths \"/splats/lod/$BASENAME/*\""

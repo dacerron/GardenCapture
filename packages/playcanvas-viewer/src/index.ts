@@ -8,6 +8,13 @@ export {
 export { normalizeSplatUrl } from "./normalizeSplatUrl";
 export { parseOrientationX } from "./parseOrientation";
 export { parseGroundClampEnabled } from "./parseGroundClamp";
+export { parseFlyZoomEnabled } from "./parseFlyZoom";
+export {
+  parseHeightmapDebug,
+  type HeightmapDebugConfig,
+} from "./parseHeightmapDebug";
+export type { HeightmapOverlayMode } from "./heightmap/heightmapOverlay";
+export { parseCoordReadout } from "./parseCoordReadout";
 export { parseSplatBudgetOverrideM, parseSplatLodLock } from "./parseSplatBudget";
 export { parseFullSplatMode } from "./parseFullSplatMode";
 export { parseSkyboxMode, type SkyboxMode } from "./parseSkyboxMode";
