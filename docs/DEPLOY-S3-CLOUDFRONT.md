@@ -1,6 +1,6 @@
 # Deploy: two apps → two S3 buckets + CloudFront
 
-This document describes how to deploy the **decoupled Virtual Soils frontend** (`apps/viewer` and `apps/admin`) to **separate S3 origin buckets**, each fronted by its **own CloudFront distribution**.
+This document describes how to deploy the **decoupled coFood frontend** (`apps/viewer` and `apps/admin`) to **separate S3 origin buckets**, each fronted by its **own CloudFront distribution**.
 
 It replaces the previous single-app flow (one `dist/`, one site bucket, Amplify, or a combined build).
 
@@ -8,8 +8,7 @@ It replaces the previous single-app flow (one `dist/`, one site bucket, Amplify,
 
 - Production viewer URLs per field: [`VIEWER-SPLAT-LINKS.md`](./VIEWER-SPLAT-LINKS.md)
 - App architecture: [`DECOUPLED-APPS.md`](./DECOUPLED-APPS.md)
-- Terraform / HCP runbook (lab repo): `terraform-setup-template/docs/virtual-soils-hcp-deployment.md`
-- Infrastructure pointer: [`../terraform/README.md`](../terraform/README.md)
+- Terraform / HCP: use your coFood (or LSN) infrastructure repo — this app repo does not define AWS resources
 
 ---
 
@@ -43,8 +42,8 @@ It replaces the previous single-app flow (one `dist/`, one site bucket, Amplify,
 
 | Surface | App folder | S3 bucket (example name) | CloudFront URL role |
 |---------|------------|--------------------------|---------------------|
-| Public viewer | `apps/viewer` | `ubc-eml-virtual-soils-prod-viewer-*` | Map / viewer experience |
-| Admin + editor | `apps/admin` | `ubc-eml-virtual-soils-prod-admin-*` | Cognito login, CRUD, editor |
+| Public viewer | `apps/viewer` | `VIEWER_SITE_BUCKET` (your Terraform output) | Map / viewer experience |
+| Admin + editor | `apps/admin` | `ADMIN_SITE_BUCKET` (your Terraform output) | Cognito login, CRUD, editor |
 
 Both apps call the **same API Gateway base URL** today. They use different env var names (`VITE_PUBLIC_API_URL` vs `VITE_ADMIN_API_URL`) so CI can inject the same endpoint without sharing a single `.env` shape.
 
@@ -56,7 +55,7 @@ Splats and thumbnails stay in the **assets bucket** (separate from either site b
 
 ### 1. Terraform: two static-site modules
 
-The lab stack currently provisions **one** `s3-static-site` module (`module.site`). For this deploy model, extend `projects/ubc-eml/virtual-soils/main.tf` with **two instances** of `modules/s3-static-site`:
+The lab stack currently provisions **one** `s3-static-site` module (`module.site`). For this deploy model, extend `projects/<your-project>/main.tf` with **two instances** of `modules/s3-static-site`:
 
 ```hcl
 module "viewer_site" {
@@ -131,10 +130,10 @@ The assets bucket module uses the same list for splat fetches from the browser.
 
 ### 4. GitHub / CI deploy IAM role
 
-Use a **narrow deploy role** (not `HCPTerraform`). Extend the lab policy template `docs/iam/github-deploy-virtual-soils-policy.json` to cover **both** site bucket name patterns, for example:
+Use a **narrow deploy role** (not `HCPTerraform`). Extend the lab policy template `docs/iam/github-deploy-policy.json` to cover **both** site bucket name patterns, for example:
 
-- `arn:aws:s3:::ubc-eml-virtual-soils-prod-viewer-*`
-- `arn:aws:s3:::ubc-eml-virtual-soils-prod-admin-*`
+- `arn:aws:s3:::your-cofood-viewer-site-*`
+- `arn:aws:s3:::your-cofood-admin-site-*`
 - `cloudfront:CreateInvalidation` on both distribution ARNs (or scoped `distribution/*` in account)
 
 Wire GitHub Actions OIDC to this role per org/repo conventions.
@@ -193,24 +192,40 @@ Alternatively, set `envDir` in both `vite.config.ts` files to the repo root and 
 
 ## Manual deploy (first time or debugging)
 
-Run from the **repository root** so workspaces resolve `@soil/shared`.
+Run from the **repository root** so workspaces resolve `@soil/shared`. Preferred: use the root deploy scripts, which **fail fast** if hosting env vars are missing:
 
-### Viewer
+```bash
+# Build-time (Vite) — required before either script
+export VITE_PUBLIC_API_URL="https://YOUR_API.execute-api.ca-central-1.amazonaws.com"
+# Admin also needs VITE_ADMIN_API_URL + VITE_COGNITO_* (see .env.example)
+
+export VIEWER_SITE_BUCKET="YOUR_VIEWER_SITE_BUCKET"
+export VIEWER_CLOUDFRONT_DISTRIBUTION_ID="VIEWER_DISTRIBUTION_ID"
+./deploy_viewer.sh
+
+export ADMIN_SITE_BUCKET="YOUR_ADMIN_SITE_BUCKET"
+export ADMIN_CLOUDFRONT_DISTRIBUTION_ID="ADMIN_DISTRIBUTION_ID"
+./deploy_admin.sh
+```
+
+### Viewer (explicit commands)
 
 ```bash
 export VITE_PUBLIC_API_URL="https://YOUR_API.execute-api.ca-central-1.amazonaws.com"
+: "${VIEWER_SITE_BUCKET:?error: set VIEWER_SITE_BUCKET}"
+: "${VIEWER_CLOUDFRONT_DISTRIBUTION_ID:?error: set VIEWER_CLOUDFRONT_DISTRIBUTION_ID}"
 
 npm ci
 npm run build:viewer
 
-aws s3 sync apps/viewer/dist/ s3://VIEWER_BUCKET_NAME/ --delete
+aws s3 sync apps/viewer/dist/ "s3://${VIEWER_SITE_BUCKET}/" --delete
 
 aws cloudfront create-invalidation \
-  --distribution-id VIEWER_DISTRIBUTION_ID \
+  --distribution-id "$VIEWER_CLOUDFRONT_DISTRIBUTION_ID" \
   --paths "/*"
 ```
 
-### Admin
+### Admin (explicit commands)
 
 ```bash
 export VITE_ADMIN_API_URL="https://YOUR_API.execute-api.ca-central-1.amazonaws.com"
@@ -218,14 +233,16 @@ export VITE_COGNITO_USER_POOL_ID="ca-central-1_..."
 export VITE_COGNITO_CLIENT_ID="..."
 export VITE_COGNITO_DOMAIN="....auth.ca-central-1.amazoncognito.com"
 export VITE_COGNITO_OAUTH_DOMAIN="$VITE_COGNITO_DOMAIN"
+: "${ADMIN_SITE_BUCKET:?error: set ADMIN_SITE_BUCKET}"
+: "${ADMIN_CLOUDFRONT_DISTRIBUTION_ID:?error: set ADMIN_CLOUDFRONT_DISTRIBUTION_ID}"
 
 npm ci
 npm run build:admin
 
-aws s3 sync apps/admin/dist/ s3://ADMIN_BUCKET_NAME/ --delete
+aws s3 sync apps/admin/dist/ "s3://${ADMIN_SITE_BUCKET}/" --delete
 
 aws cloudfront create-invalidation \
-  --distribution-id ADMIN_DISTRIBUTION_ID \
+  --distribution-id "$ADMIN_CLOUDFRONT_DISTRIBUTION_ID" \
   --paths "/*"
 ```
 

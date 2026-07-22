@@ -79,7 +79,7 @@ aws s3 cp s3://BUCKET/splats/ s3://BUCKET/splats/ --recursive --metadata-directi
 Example for this project:
 
 ```powershell
-aws s3 cp s3://ubc-eml-virtual-soils-prod-assets-078d04/splats/ s3://ubc-eml-virtual-soils-prod-assets-078d04/splats/ --recursive --metadata-directive REPLACE --cache-control "public, max-age=31536000, immutable"
+aws s3 cp s3://YOUR_ASSETS_BUCKET/splats/ s3://YOUR_ASSETS_BUCKET/splats/ --recursive --metadata-directive REPLACE --cache-control "public, max-age=31536000, immutable"
 ```
 
 Add `--region ca-central-1` if your CLI default region differs.
@@ -101,7 +101,7 @@ If you see `arguments are required: paths`, you ran the CloudFront command witho
 
 ### 2. CloudFront in front of the assets bucket (best for production)
 
-Terraform module `s3-assets-bucket` supports `enable_cdn = true` in the lab repo (`projects/ubc-eml/virtual-soils/`). After HCP apply, use output **`assets_cdn_url`** in DynamoDB:
+Terraform module `s3-assets-bucket` supports `enable_cdn = true` in the lab repo (`projects/<your-project>/`). After HCP apply, use output **`assets_cdn_url`** in DynamoDB:
 
 ```text
 https://{assets_cloudfront_domain}/splats/name.ksplat
@@ -135,7 +135,7 @@ Use when repeat visits matter more than fastest first paint.
 
 When HTTP caching is insufficient, cache the file in the browser explicitly:
 
-1. `fetch(splatUrl)` → store response in `caches.open('virtual-soils-splats')`.
+1. `fetch(splatUrl)` → store response in `caches.open('cofood-splats')`.
 2. On next visit: `cache.match(url)` → `URL.createObjectURL(blob)`.
 3. Pass the **blob URL** to `addSplatScene()` (library supports blob URLs with an explicit `format` if needed).
 

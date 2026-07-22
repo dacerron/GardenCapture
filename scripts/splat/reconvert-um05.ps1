@@ -8,6 +8,8 @@
 #
 # Prerequisites:
 #   @playcanvas/splat-transform on PATH (v2.4+)
+#   ASSETS_CDN_URL — HTTPS origin for splats (required unless -SkipDownload and the
+#                    source file already exists under temp/)
 #
 # Outputs under work/out/ (served at /work-out/… during npm run dev:viewer):
 #   UM05_compare_lod0-only/       streamed LOD, finest level only (no decimation)
@@ -35,7 +37,15 @@ $ErrorActionPreference = "Stop"
 
 $BundleBase = "UM05_HighQuality_0SH"
 $SourceName = "$BundleBase.splat"
-$SourceUrl = "https://d3sni13yu1e7cb.cloudfront.net/splats/$SourceName"
+$AssetsCdnUrl = $env:ASSETS_CDN_URL
+if ([string]::IsNullOrWhiteSpace($AssetsCdnUrl)) {
+    if (-not $SkipDownload) {
+        throw "error: missing ASSETS_CDN_URL. Export your assets CDN origin (e.g. https://YOUR_ASSETS_CLOUDFRONT_DOMAIN) or use -SkipDownload with a local temp/$SourceName file."
+    }
+    $SourceUrl = $null
+} else {
+    $SourceUrl = "$($AssetsCdnUrl.TrimEnd('/'))/splats/$SourceName"
+}
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $TempDir = Join-Path $RepoRoot "temp"

@@ -1,12 +1,12 @@
 # Splat loading and caching — how we fixed it
 
-This document records the **problem**, **diagnosis**, and **resolution** for Virtual Soils splat performance after migrating assets to AWS (`ubc-eml-virtual-soils-prod-assets-*`). It is the team runbook for “we fixed slow loads and refresh re-downloads” — not a generic caching tutorial.
+This document records the **problem**, **diagnosis**, and **resolution** for splat performance after migrating assets to AWS (use your project’s `ASSETS_BUCKET` / CDN outputs). It is the team runbook for “we fixed slow loads and refresh re-downloads” — not a generic caching tutorial.
 
 **Related**
 
 - [`SPLAT-CACHING.md`](./SPLAT-CACHING.md) — ongoing reference (headers, invalidation, troubleshooting)
 - [`DEPLOY-S3-CLOUDFRONT.md`](./DEPLOY-S3-CLOUDFRONT.md) — viewer/admin site deploy
-- Lab Terraform: `terraform-setup-template/projects/ubc-eml/virtual-soils/` + `modules/s3-assets-bucket`
+- Lab Terraform: `terraform-setup-template/projects/<your-project>/` + `modules/s3-assets-bucket`
 
 ---
 
@@ -15,7 +15,7 @@ This document records the **problem**, **diagnosis**, and **resolution** for Vir
 | Symptom | When |
 |---------|------|
 | Splats took **~60s+** to become usable | After moving files to S3 (`…s3.ca-central-1.amazonaws.com/splats/…`) |
-| Previously **&lt;30s** on legacy CDN (`virtualsoils.ca/cdn/…`) | Same scenes, older hosting |
+| Previously **&lt;30s** on legacy CDN (`LEGACY_CDN_HOST/cdn/…`) | Same scenes, older hosting |
 | **Full re-download** on every browser refresh | Network tab showed large transfers again, not `(disk cache)` |
 | Confusion with **CloudFront invalidation** | `arguments are required: paths` when running the wrong CLI command |
 
@@ -51,7 +51,7 @@ The working stack combines **infrastructure** and **object metadata**:
 **Example URL change**
 
 ```text
-Before: https://ubc-eml-virtual-soils-prod-assets-078d04.s3.ca-central-1.amazonaws.com/splats/UBC_TotemField.ksplat
+Before: https://YOUR_ASSETS_BUCKET.s3.ca-central-1.amazonaws.com/splats/UBC_TotemField.ksplat
 After:  https://{assets_cloudfront_domain}/splats/UBC_TotemField.ksplat
 ```
 
@@ -78,7 +78,7 @@ Path stays the same (`/splats/…`); only the hostname changes. No app code chan
 Set long-lived cache headers on existing objects (PowerShell, one line):
 
 ```powershell
-aws s3 cp s3://ubc-eml-virtual-soils-prod-assets-078d04/splats/ s3://ubc-eml-virtual-soils-prod-assets-078d04/splats/ --recursive --metadata-directive REPLACE --cache-control "public, max-age=31536000, immutable" --region ca-central-1
+aws s3 cp s3://YOUR_ASSETS_BUCKET/splats/ s3://YOUR_ASSETS_BUCKET/splats/ --recursive --metadata-directive REPLACE --cache-control "public, max-age=31536000, immutable" --region ca-central-1
 ```
 
 **Do not** use `aws cloudfront create-invalidation` for this — that command needs `--paths` and only affects CloudFront distributions, not S3 metadata.
@@ -138,7 +138,7 @@ In the browser: second refresh should show substantially less splat download (of
 | `cloudfront:ListCachePolicies` AccessDenied on **plan** | `data.aws_cloudfront_*_policy` data sources at plan time | **Removed data sources**; use hardcoded managed IDs (Fix 1) |
 | `arguments are required: paths` | Ran `create-invalidation` without `--paths` | Use `aws s3 cp … --cache-control` for S3; invalidation is ` --paths "/*"` only for distributions |
 
-Optional IAM (Fix 2): add `ListCachePolicies`, `GetCachePolicy`, `ListOriginRequestPolicies`, `GetOriginRequestPolicy` to `HCPTerraform` if you reintroduce data sources — see `docs/iam/hcp-terraform-virtual-soils-policy.json` in the lab repo.
+Optional IAM (Fix 2): add `ListCachePolicies`, `GetCachePolicy`, `ListOriginRequestPolicies`, `GetOriginRequestPolicy` to `HCPTerraform` if you reintroduce data sources — see `docs/iam/hcp-terraform-policy.json` in the lab repo.
 
 ---
 

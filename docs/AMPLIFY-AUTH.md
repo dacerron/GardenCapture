@@ -1,6 +1,6 @@
 # aws-amplify auth dependency (admin app)
 
-This document describes how the **`aws-amplify` npm package** is used in the Virtual Soils monorepo today.
+This document describes how the **`aws-amplify` npm package** is used in the coFood monorepo today.
 
 It is **not** about Amplify Hosting. Static sites deploy via **S3 + CloudFront** (see [`DEPLOY-S3-CLOUDFRONT.md`](./DEPLOY-S3-CLOUDFRONT.md)). The `aws-amplify` library is used only as a **browser client SDK for Cognito Hosted UI OAuth** in the admin app.
 
@@ -16,7 +16,7 @@ It is **not** about Amplify Hosting. Static sites deploy via **S3 + CloudFront**
 
 **Package:** `aws-amplify` `^6.16.0` (declared in `apps/admin/package.json` and hoisted at the repo root `package.json`).
 
-**Backend:** Cognito user pool, app client, and Hosted UI domain are provisioned by Terraform in the lab repo (`terraform-setup-template/projects/ubc-eml/virtual-soils/`). Amplify does not manage that infrastructure.
+**Backend:** Cognito user pool, app client, and Hosted UI domain are provisioned by Terraform in the lab repo (`terraform-setup-template/projects/<your-project>/`). Amplify does not manage that infrastructure.
 
 ---
 
@@ -213,4 +213,4 @@ HCP outputs used at build time: `cognito_user_pool_id`, `cognito_user_pool_clien
 
 - [`DECOUPLED-APPS.md`](./DECOUPLED-APPS.md) — two-app architecture and deploy overview
 - [`DEPLOY-S3-CLOUDFRONT.md`](./DEPLOY-S3-CLOUDFRONT.md) — build env vars, Cognito URL checklist, smoke tests
-- Lab repo: `terraform-setup-template/docs/virtual-soils-hcp-deployment.md` — HCP apply and IAM
+- Lab repo: `terraform-setup-template/docs/hcp-deployment.md` — HCP apply and IAM
