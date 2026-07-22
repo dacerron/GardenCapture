@@ -19,10 +19,11 @@ import type { SkyboxMode } from "./parseSkyboxMode";
 import type { ControlMode } from "@soil/shared/three/ScreenSpace";
 import type { PerformancePreset } from "@soil/shared/three/ScreenSpace";
 import {
-  applyPerformancePreset,
+  applySplatBudget,
   getDefaultPerformancePreset,
   getSplatBudgetM,
 } from "./performancePresets";
+import { applyAlphaClipForward, getAlphaClipForwardForPreset } from "./alphaClip";
 import { DEFAULT_MARKER_RADIUS } from "@soil/shared/markers/editorMarkers";
 import { applySplatOrientationX } from "./applySplatOrientation";
 import { deriveStartViewPosition } from "@soil/shared/utils/startPos";
@@ -42,6 +43,11 @@ import {
   type HeightmapOverlayHandle,
   type HeightmapOverlayMode,
 } from "./heightmap/heightmapOverlay";
+import {
+  createHeightmapOccluder,
+  type HeightmapOccluderHandle,
+} from "./heightmap/heightmapOccluder";
+import { setupDepthPrepass, type DepthPrepassHandle } from "./heightmap/setupDepthPrepass";
 import {
   setupWorldCoordinateReadout,
   type GroundWorldSampler,
@@ -102,8 +108,22 @@ export type PlayCanvasAppOptions = {
   };
   /** Show a click-to-read world/local coordinate picker (for tuning collision seed/box). */
   coordReadout?: boolean;
+  /**
+   * Depth-prepass ground occluder from the loaded heightmap. Blocks splats behind
+   * the ground sheet when `groundOccluder=1` is set on the viewer URL.
+   */
+  groundOccluder?: {
+    enabled?: boolean;
+    /** Voxel-grid Y offset below the heightmap surface (meters). */
+    yOffset?: number;
+  };
   /** Enable scroll-wheel FOV zoom while in desktop fly mode. Off by default. */
   flyZoom?: boolean;
+  /**
+   * Forward-pass alpha cull threshold (0–1). When set, locks the value and ignores
+   * quality-preset changes. Omit to derive from `performancePreset`.
+   */
+  alphaClipForward?: number;
 };
 
 export type PlayCanvasApp = {
@@ -165,15 +185,21 @@ export async function createPlayCanvasApp(
     groundClamp = {},
     heightmapDebug = {},
     coordReadout = false,
+    groundOccluder = {},
     flyZoom = false,
+    alphaClipForward: alphaClipForwardOverride,
   } = options;
   const heightmapDebugEnabled = heightmapDebug.enabled === true;
   const coordReadoutEnabled = coordReadout === true;
+  const groundOccluderEnabled = groundOccluder.enabled === true;
   const budgetLocked = splatBudgetM !== undefined;
+  const alphaClipLocked = alphaClipForwardOverride !== undefined;
   const budgetM =
     splatBudgetM !== undefined
       ? splatBudgetM
       : getSplatBudgetM(performancePreset);
+  const alphaClipForward =
+    alphaClipForwardOverride ?? getAlphaClipForwardForPreset(performancePreset);
   const sceneFocus = new pc.Vec3();
   const sceneCameraPosition = new pc.Vec3();
 
@@ -217,9 +243,14 @@ export async function createPlayCanvasApp(
   app.scene.gsplat.lodBehindPenalty = 3;
   app.scene.gsplat.radialSorting = true;
   app.scene.gsplat.splatBudget = Math.round(budgetM * 1_000_000);
+  applyAlphaClipForward(app, alphaClipForward);
+  console.info("[gsplat] alphaClipForward", alphaClipForward.toFixed(4));
 
   const heightmapUrl =
-    groundClamp.enabled === false && !heightmapDebugEnabled && !coordReadoutEnabled
+    groundClamp.enabled === false &&
+    !heightmapDebugEnabled &&
+    !coordReadoutEnabled &&
+    !groundOccluderEnabled
       ? null
       : resolveHeightmapUrl(splatUrl, groundClamp.heightmapUrl);
   const heightmapLoadPromise = heightmapUrl
@@ -360,6 +391,8 @@ export async function createPlayCanvasApp(
     destroy() {},
   };
   let heightmapOverlayHandle: HeightmapOverlayHandle | null = null;
+  let heightmapOccluderHandle: HeightmapOccluderHandle | null = null;
+  let depthPrepassHandle: DepthPrepassHandle | null = null;
   let coordReadoutHandle: WorldCoordinateReadoutHandle | null = null;
   let groundSampler: GroundWorldSampler | null = null;
 
@@ -403,6 +436,28 @@ export async function createPlayCanvasApp(
     });
     if (heightmapOverlayHandle) {
       console.info("[heightmap] debug overlay enabled", heightmapDebug.mode ?? "surface");
+    }
+  }
+
+  if (heightmapData && groundOccluderEnabled) {
+    depthPrepassHandle = setupDepthPrepass(app, camera);
+    heightmapOccluderHandle = createHeightmapOccluder({
+      app,
+      splatEntity,
+      data: heightmapData,
+      yOffset: groundOccluder.yOffset,
+    });
+    if (heightmapOccluderHandle) {
+      console.info(
+        "[heightmap] ground occluder enabled (horizontal cell caps)",
+        groundOccluder.yOffset !== undefined
+          ? `(yOffset=${groundOccluder.yOffset}m)`
+          : "",
+      );
+    } else {
+      console.warn("[heightmap] ground occluder requested but mesh is empty");
+      depthPrepassHandle?.destroy();
+      depthPrepassHandle = null;
     }
   }
 
@@ -527,8 +582,13 @@ export async function createPlayCanvasApp(
       }
     },
     setPerformancePreset(preset: PerformancePreset) {
-      if (budgetLocked) return;
-      applyPerformancePreset(app, preset);
+      if (budgetLocked && alphaClipLocked) return;
+      if (!budgetLocked) {
+        applySplatBudget(app, getSplatBudgetM(preset));
+      }
+      if (!alphaClipLocked) {
+        applyAlphaClipForward(app, getAlphaClipForwardForPreset(preset));
+      }
     },
     setMarkers(nextMarkers, options) {
       markersHandle.setMarkers(nextMarkers, options);
@@ -625,6 +685,8 @@ export async function createPlayCanvasApp(
       flyFovZoom.destroy();
       heightClampHandle.destroy();
       heightmapOverlayHandle?.destroy();
+      heightmapOccluderHandle?.destroy();
+      depthPrepassHandle?.destroy();
       coordReadoutHandle?.destroy();
       markersHandle.destroy();
       markerGizmoHandle?.destroy();

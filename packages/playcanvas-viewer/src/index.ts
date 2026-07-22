@@ -7,7 +7,18 @@ export {
 } from "./createPlayCanvasApp";
 export { normalizeSplatUrl } from "./normalizeSplatUrl";
 export { parseOrientationX } from "./parseOrientation";
+export {
+  applyAlphaClipForward,
+  getAlphaClipForwardForPreset,
+  legacyAlphaThresholdToClipForward,
+  PLAYCANVAS_DEFAULT_ALPHA_CLIP_FORWARD,
+} from "./alphaClip";
+export { parseAlphaClipForwardOverride } from "./parseAlphaClip";
 export { parseGroundClampEnabled } from "./parseGroundClamp";
+export {
+  parseGroundOccluder,
+  type GroundOccluderConfig,
+} from "./parseGroundOccluder";
 export { parseFlyZoomEnabled } from "./parseFlyZoom";
 export {
   parseHeightmapDebug,

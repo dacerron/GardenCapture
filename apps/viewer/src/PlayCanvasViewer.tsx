@@ -9,7 +9,9 @@ import {
   parseFullSplatMode,
   parseOrientationX,
   parseGroundClampEnabled,
+  parseGroundOccluder,
   parseFlyZoomEnabled,
+  parseAlphaClipForwardOverride,
   parseHeightmapDebug,
   parseCoordReadout,
   parseSkyboxMode,
@@ -134,6 +136,8 @@ export default function PlayCanvasViewer() {
   const splatBudgetOverrideM = parseSplatBudgetOverrideM(searchParams);
   const lockLodLevel = parseSplatLodLock(searchParams);
   const heightmapDebug = parseHeightmapDebug(searchParams);
+  const groundOccluder = parseGroundOccluder(searchParams);
+  const alphaClipForwardOverride = parseAlphaClipForwardOverride(searchParams);
   const coordReadout = parseCoordReadout(searchParams);
   const flyZoom = parseFlyZoomEnabled(searchParams);
 
@@ -309,8 +313,15 @@ export default function PlayCanvasViewer() {
             mode: heightmapDebug.mode,
             opacity: heightmapDebug.opacity,
           },
+          groundOccluder: {
+            enabled: groundOccluder.enabled,
+            yOffset: groundOccluder.yOffset,
+          },
           coordReadout,
           flyZoom,
+          ...(alphaClipForwardOverride !== undefined
+            ? { alphaClipForward: alphaClipForwardOverride }
+            : {}),
           onLoadProgress: ({ hint, progress }) => {
             if (cancelled) return;
             setOverlayHint(hint);
@@ -355,6 +366,9 @@ export default function PlayCanvasViewer() {
     heightmapDebug.enabled,
     heightmapDebug.mode,
     heightmapDebug.opacity,
+    groundOccluder.enabled,
+    groundOccluder.yOffset,
+    alphaClipForwardOverride,
     coordReadout,
     flyZoom,
   ]);
