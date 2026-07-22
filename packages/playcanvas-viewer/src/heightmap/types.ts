@@ -40,5 +40,7 @@ export type HeightmapGroundCollider = {
   isReady(): boolean;
   /** Minimum allowed camera world Y at the given world position. */
   getMinCameraY(worldX: number, worldY: number, worldZ: number): number | null;
+  /** Ground surface world Y under the given world position, or null when out of bounds. */
+  sampleGroundWorldY(worldX: number, worldY: number, worldZ: number): number | null;
   clampWorldPosition(position: pc.Vec3): pc.Vec3;
 };

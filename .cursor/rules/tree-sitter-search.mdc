@@ -1,0 +1,48 @@
+---
+description: Prefer tree-sitter-analyzer MCP for structural and cross-file code search when connected
+alwaysApply: true
+---
+
+# Code search — prefer tree-sitter when available
+
+When the **tree-sitter-analyzer** MCP server is connected, use it first for structure and relationships. Fall back to built-in tools when MCP is unavailable or the question is not AST-shaped.
+
+## Use tree-sitter first
+
+| Intent | MCP approach |
+|--------|----------------|
+| Where is a symbol defined? | `search action=symbol` |
+| What calls X / what does X call? | `nav action=callers` / `action=callees` |
+| Trace a flow or feature | `nav action=context` → `nav action=callee_tree` or `caller_tree` |
+| File/module outline | `structure` (analyze or read by line range) |
+| Edit safety / blast radius | `edit action=safe` or `nav action=impact` |
+| Project or dependency overview | `project` / `health action=deps` |
+
+**Default chain for “how does X work?”:** `nav action=context` → `callee_tree` or `caller_tree` → `Read` only if a specific block is missing from the response.
+
+**Anti-patterns:** Do not scatter many small MCP calls when one `context` or `callee_tree` answers the question. Do not re-verify MCP results with grep unless something looks wrong.
+
+## Use built-in tools instead
+
+| Intent | Tool |
+|--------|------|
+| Exact string, env var, URL, config key | `Grep` |
+| Known file and line range | `Read` |
+| Conceptual “how is auth handled?” | `SemanticSearch` |
+| Find files by name | `Glob` |
+| Markdown, shell scripts, JSON, deploy config | `Grep` / `Read` |
+
+## Quick decision
+
+```
+Know the file/line?           → Read
+Know the exact text?          → Grep
+Know the symbol/flow/graph?   → tree-sitter (if MCP connected)
+Vague architecture question?  → tree-sitter context, then SemanticSearch if needed
+```
+
+## Caveats
+
+- MCP must be connected (`tree-sitter-analyzer` in `.cursor/mcp.json`). If unavailable, use Grep + SemanticSearch + Read.
+- First `uvx` startup can be slow; prefer one or two substantive MCP calls over many tiny ones.
+- Static analysis may miss dynamic dispatch, stringly calls, and framework magic (React hooks, PlayCanvas internals).

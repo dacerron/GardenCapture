@@ -8,12 +8,14 @@ import {
   DEFAULT_FOCUS_POINT,
   isMobileLikeControls,
 } from "./mobileCamera";
+import { DEFAULT_CAMERA_FOV, setupFlyFovZoom } from "./flyFovZoom";
 import { createCameraInputGate } from "./cameraInputGate";
 import { setupEditorMarkerGizmo, type MarkerEditHandlers } from "./editorMarkerGizmo";
 import { GIZMO_AXIS_LENGTH, START_AXIS_LENGTH } from "./editorAxisVisual";
 import { setupEditorOverlayLayer } from "./editorOverlayLayer";
 import { setupPlayCanvasMarkers, type PlacementPreviewState } from "./setupAnnotations";
-import { setupPlayCanvasSkybox, SKYBOX_GROUND_COLOR } from "./setupSkybox";
+import { setupPlayCanvasSkybox, skyboxClearColor } from "./setupSkybox";
+import type { SkyboxMode } from "./parseSkyboxMode";
 import type { ControlMode } from "@soil/shared/three/ScreenSpace";
 import type { PerformancePreset } from "@soil/shared/three/ScreenSpace";
 import {
@@ -35,6 +37,16 @@ import {
 import { createHeightmapQuery } from "./heightmap/heightmapQuery";
 import { loadHeightmap } from "./heightmap/loadHeightmap";
 import { resolveHeightmapUrl } from "./heightmap/resolveHeightmapUrl";
+import {
+  createHeightmapOverlay,
+  type HeightmapOverlayHandle,
+  type HeightmapOverlayMode,
+} from "./heightmap/heightmapOverlay";
+import {
+  setupWorldCoordinateReadout,
+  type GroundWorldSampler,
+  type WorldCoordinateReadoutHandle,
+} from "./worldCoordinateReadout";
 import type { HeightmapGroundClampConfig } from "./heightmap/types";
 
 /** Matches legacy mkkellogg viewer flip in GaussianViewer.ts (rotation [1,0,0,0]). */
@@ -65,8 +77,10 @@ export type PlayCanvasAppOptions = {
   onMarkerClick?: (index: number) => void;
   /** Fly camera when a hotspot is clicked (viewer default). */
   flyOnMarkerClick?: boolean;
-  /** Equirectangular sky texture URL. Omit for default HDR; pass `null` to disable. */
+  /** Equirectangular sky texture URL. Omit for default HDR; pass `null` to disable. Ignored when `skyboxMode` is `blue`. */
   skyboxUrl?: string | null;
+  /** `blue` = solid blue; `infinite` = pre-fix wraparound cubemap (`?skybox=infinite`). */
+  skyboxMode?: SkyboxMode;
   /** Desktop camera mode. Ignored on mobile/coarse pointer (always orbit). */
   defaultControlMode?: ControlMode;
   /** Optional loading UI updates while the splat scene is prepared. */
@@ -78,6 +92,18 @@ export type PlayCanvasAppOptions = {
   showStartAxes?: boolean;
   /** Keep the camera above a precomputed ground heightmap when available. */
   groundClamp?: HeightmapGroundClampConfig;
+  /** Render the loaded heightmap as a debug overlay mesh on top of the splat. */
+  heightmapDebug?: {
+    enabled?: boolean;
+    /** `surface` (translucent height-colored) or `wire`. Default `surface`. */
+    mode?: HeightmapOverlayMode;
+    /** Surface opacity in (0, 1]; ignored for wireframe. */
+    opacity?: number;
+  };
+  /** Show a click-to-read world/local coordinate picker (for tuning collision seed/box). */
+  coordReadout?: boolean;
+  /** Enable scroll-wheel FOV zoom while in desktop fly mode. Off by default. */
+  flyZoom?: boolean;
 };
 
 export type PlayCanvasApp = {
@@ -130,13 +156,19 @@ export async function createPlayCanvasApp(
     onMarkerClick,
     flyOnMarkerClick = !onMarkerClick,
     skyboxUrl,
+    skyboxMode = "default",
     defaultControlMode = "orbit",
     onLoadProgress,
     startPos = [0, 0, 0],
     startViewPosition = null,
     showStartAxes = false,
     groundClamp = {},
+    heightmapDebug = {},
+    coordReadout = false,
+    flyZoom = false,
   } = options;
+  const heightmapDebugEnabled = heightmapDebug.enabled === true;
+  const coordReadoutEnabled = coordReadout === true;
   const budgetLocked = splatBudgetM !== undefined;
   const budgetM =
     splatBudgetM !== undefined
@@ -187,7 +219,7 @@ export async function createPlayCanvasApp(
   app.scene.gsplat.splatBudget = Math.round(budgetM * 1_000_000);
 
   const heightmapUrl =
-    groundClamp.enabled === false
+    groundClamp.enabled === false && !heightmapDebugEnabled && !coordReadoutEnabled
       ? null
       : resolveHeightmapUrl(splatUrl, groundClamp.heightmapUrl);
   const heightmapLoadPromise = heightmapUrl
@@ -214,20 +246,25 @@ export async function createPlayCanvasApp(
 
   const camera = new pc.Entity("camera");
   camera.addComponent("camera", {
-    clearColor: SKYBOX_GROUND_COLOR.clone(),
-    fov: 75,
+    clearColor: skyboxClearColor(skyboxMode),
+    fov: DEFAULT_CAMERA_FOV,
     toneMapping: pc.TONEMAP_LINEAR,
   });
   camera.setPosition(DEFAULT_CAMERA_POSITION);
   app.root.addChild(camera);
   camera.lookAt(DEFAULT_FOCUS_POINT);
 
-  const skyboxHandle = setupPlayCanvasSkybox(app, camera, skyboxUrl);
+  const skyboxHandle = setupPlayCanvasSkybox(app, camera, {
+    skyboxUrl,
+    mode: skyboxMode,
+  });
 
   camera.addComponent("script");
   const controls = camera.script?.create(CameraControls) as InstanceType<
     typeof CameraControls
   > | undefined;
+
+  const flyFovZoom = setupFlyFovZoom(canvas, camera);
 
   if (controls) {
     Object.assign(controls, {
@@ -240,9 +277,17 @@ export async function createPlayCanvasApp(
     });
     if (isMobileLikeControls()) {
       configureMobileCameraControls(controls);
+      flyFovZoom.setEnabled(false);
     } else {
       applyCameraControlMode(controls, defaultControlMode);
+      if (flyZoom) {
+        flyFovZoom.setControlMode(defaultControlMode);
+      } else {
+        flyFovZoom.setEnabled(false);
+      }
     }
+  } else {
+    flyFovZoom.setEnabled(false);
   }
 
   const splatEntity = new pc.Entity("splat");
@@ -314,8 +359,11 @@ export async function createPlayCanvasApp(
     clampNow: () => false,
     destroy() {},
   };
+  let heightmapOverlayHandle: HeightmapOverlayHandle | null = null;
+  let coordReadoutHandle: WorldCoordinateReadoutHandle | null = null;
+  let groundSampler: GroundWorldSampler | null = null;
 
-  if (heightmapData && groundClamp.enabled !== false) {
+  if (heightmapData) {
     const filledCells = heightmapData.heights.filter(
       (v) => v > heightmapData.meta.sentinel + 1,
     ).length;
@@ -331,14 +379,46 @@ export async function createPlayCanvasApp(
       eyeHeight: groundClamp.eyeHeight,
       surfaceClearance: groundClamp.surfaceClearance,
     });
-    clampCameraPosition = createPositionClamp(heightCollider);
-    heightClampHandle = setupCameraHeightClamp({
+    groundSampler = heightCollider.sampleGroundWorldY;
+    if (groundClamp.enabled !== false) {
+      clampCameraPosition = createPositionClamp(heightCollider);
+      heightClampHandle = setupCameraHeightClamp({
+        app,
+        cameraEntity: camera,
+        controls: controls ?? null,
+        collider: heightCollider,
+        enabled: true,
+      });
+    }
+  }
+
+  if (heightmapData && heightmapDebugEnabled) {
+    heightmapOverlayHandle = createHeightmapOverlay({
+      app,
+      splatEntity,
+      cameraEntity: camera,
+      data: heightmapData,
+      mode: heightmapDebug.mode,
+      opacity: heightmapDebug.opacity,
+    });
+    if (heightmapOverlayHandle) {
+      console.info("[heightmap] debug overlay enabled", heightmapDebug.mode ?? "surface");
+    }
+  }
+
+  if (coordReadoutEnabled) {
+    coordReadoutHandle = setupWorldCoordinateReadout({
       app,
       cameraEntity: camera,
-      controls: controls ?? null,
-      collider: heightCollider,
-      enabled: true,
+      splatEntity,
+      canvas,
+      overlayParent: markerOverlayParent ?? document.body,
+      sampleGroundWorldY: groundSampler,
     });
+    console.info(
+      "[heightmap] coordinate readout enabled",
+      groundSampler ? "(heightmap ground)" : "(plane fallback)",
+    );
   }
 
   resetCameraFromStartPos({
@@ -434,11 +514,17 @@ export async function createPlayCanvasApp(
       markersHandle.flyToMarker(index);
     },
     resetCamera() {
+      flyFovZoom.reset();
       applyStartPosCameraFraming();
       heightClampHandle.clampNow();
     },
     setControlMode(mode: ControlMode) {
       applyCameraControlMode(controls ?? null, mode);
+      if (isMobileLikeControls() || !flyZoom) {
+        flyFovZoom.setEnabled(false);
+      } else {
+        flyFovZoom.setControlMode(mode);
+      }
     },
     setPerformancePreset(preset: PerformancePreset) {
       if (budgetLocked) return;
@@ -536,7 +622,10 @@ export async function createPlayCanvasApp(
       markerGizmoHandle?.setRadius(radius);
     },
     destroy() {
+      flyFovZoom.destroy();
       heightClampHandle.destroy();
+      heightmapOverlayHandle?.destroy();
+      coordReadoutHandle?.destroy();
       markersHandle.destroy();
       markerGizmoHandle?.destroy();
       startPosGizmoHandle?.destroy();

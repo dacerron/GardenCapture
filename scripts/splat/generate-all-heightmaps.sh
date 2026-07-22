@@ -7,8 +7,17 @@
 #   ./scripts/splat/generate-all-heightmaps.sh --force
 #   SPLAT_HEIGHTMAP_CELL=0.25 ./scripts/splat/generate-all-heightmaps.sh
 #
+# Optional walkable-band env (passed through to extract-heightmap.mjs):
+#   SPLAT_HEIGHTMAP_WALKABLE_BAND_MIN
+#   SPLAT_HEIGHTMAP_WALKABLE_BAND_MAX
+#   SPLAT_HEIGHTMAP_WALKABLE_BAND_FRACTION
+#   SPLAT_HEIGHTMAP_WALKABLE_MAX_Y
+#
 # Example (single bundle via the underlying script):
 #   node scripts/splat/extract-heightmap.mjs --voxel work/out/Scene/collision.voxel.json
+#   node scripts/splat/extract-heightmap.mjs --voxel … --walkable-band-max 12
+#
+# UM_05 (fainter floaters): scripts/splat/generate-um05-voxels.ps1
 
 set -euo pipefail
 

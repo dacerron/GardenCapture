@@ -9,6 +9,10 @@ import {
   parseFullSplatMode,
   parseOrientationX,
   parseGroundClampEnabled,
+  parseFlyZoomEnabled,
+  parseHeightmapDebug,
+  parseCoordReadout,
+  parseSkyboxMode,
   parseSplatBudgetOverrideM,
   parseSplatLodLock,
   PLAYCANVAS_PERF_PRESET_LABELS,
@@ -126,8 +130,12 @@ export default function PlayCanvasViewer() {
   const directUrl = searchParams.get("url")?.trim() ?? "";
   const fullSplatMode = parseFullSplatMode(searchParams);
   const orientationX = parseOrientationX(searchParams.get("orientation"));
+  const skyboxMode = parseSkyboxMode(searchParams);
   const splatBudgetOverrideM = parseSplatBudgetOverrideM(searchParams);
   const lockLodLevel = parseSplatLodLock(searchParams);
+  const heightmapDebug = parseHeightmapDebug(searchParams);
+  const coordReadout = parseCoordReadout(searchParams);
+  const flyZoom = parseFlyZoomEnabled(searchParams);
 
   useEffect(() => {
     let cancelled = false;
@@ -288,6 +296,7 @@ export default function PlayCanvasViewer() {
             ? { splatBudgetM: splatBudgetOverrideM }
             : {}),
           ...(lockLodLevel !== undefined ? { lockLodLevel } : {}),
+          skyboxMode,
           groundClamp: {
             enabled: loadState.fullSplatMode
               ? ["1", "true", "yes"].includes(
@@ -295,6 +304,13 @@ export default function PlayCanvasViewer() {
                 )
               : parseGroundClampEnabled(searchParams),
           },
+          heightmapDebug: {
+            enabled: heightmapDebug.enabled,
+            mode: heightmapDebug.mode,
+            opacity: heightmapDebug.opacity,
+          },
+          coordReadout,
+          flyZoom,
           onLoadProgress: ({ hint, progress }) => {
             if (cancelled) return;
             setOverlayHint(hint);
@@ -331,7 +347,17 @@ export default function PlayCanvasViewer() {
       playCanvasAppRef.current = null;
       app?.destroy();
     };
-  }, [loadState, splatBudgetOverrideM, lockLodLevel]);
+  }, [
+    loadState,
+    splatBudgetOverrideM,
+    lockLodLevel,
+    skyboxMode,
+    heightmapDebug.enabled,
+    heightmapDebug.mode,
+    heightmapDebug.opacity,
+    coordReadout,
+    flyZoom,
+  ]);
 
   function handlePerformancePresetChange(preset: PerformancePreset) {
     setPerformancePreset(preset);
@@ -491,7 +517,7 @@ export default function PlayCanvasViewer() {
             type="button"
             className={`playCanvasControlModeBtn${controlMode === "fly" ? " isActive" : ""}`}
             aria-pressed={controlMode === "fly"}
-            title="WASD move, drag to look, mouse wheel forward/back"
+            title="WASD move, drag to look (scroll-wheel FOV zoom with ?flyZoom=1)"
             onClick={() => handleControlModeChange("fly")}
           >
             Fly
@@ -500,7 +526,7 @@ export default function PlayCanvasViewer() {
             type="button"
             className={`playCanvasControlModeBtn${controlMode === "orbit" ? " isActive" : ""}`}
             aria-pressed={controlMode === "orbit"}
-            title="Drag to orbit, right-drag to pan, wheel to zoom"
+            title="Drag to orbit, right-drag to pan, wheel to dolly zoom"
             onClick={() => handleControlModeChange("orbit")}
           >
             Orbit

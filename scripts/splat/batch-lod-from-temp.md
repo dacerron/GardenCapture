@@ -26,7 +26,13 @@ splat-transform --version
 
 ### Get source splats into `temp/`
 
-Download from S3 or copy local files. **Basename** of the file becomes the output folder name (e.g. `UBC_Farm_Agricultural.splat` → `work/out/UBC_Farm_Agricultural/`).
+Download from S3 or copy local files. Accepted inputs: **`.ksplat`, `.splat`, `.ply`, `.sog`**. **Basename** of the file becomes the output folder name (e.g. `UBC_Farm_Agricultural.splat` → `work/out/UBC_Farm_Agricultural/`).
+
+> **SOG inputs:** a single-file `.sog` works directly (drop it in `temp/`). The older
+> directory-style SOG (a `meta.json` + `.webp` files) is **not** auto-detected — convert it
+> to a single file first, e.g. `splat-transform path/to/meta.json temp/{basename}.sog`
+> (or `.ply`), then run the batch. The heightmap/collision steps are format-agnostic; they
+> operate on the decoded `lod0.ply`, so the output is identical to a `.ply`/`.ksplat` source.
 
 ```powershell
 aws s3 cp `
@@ -96,6 +102,7 @@ Set before running (optional):
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `SPLAT_ROTATION` | `180,0,0` | Euler degrees for `-r` (legacy viewer alignment). Use `none` to skip. |
+| `SPLAT_DECIMATE_DEVICE` | `auto` | Device for the `--decimate` KNN pass. `auto` = GPU with automatic CPU fallback on a GPU device hang; `cpu` = force the CPU KD-tree path (slower, but avoids WebGPU/D3D12 hangs); a GPU index (e.g. `0`) pins an adapter. |
 | `SPLAT_POSITION_OUTLIER_M` | `200` | If any \|x/y/z\| exceeds this (meters), run position box crop. |
 | `SPLAT_POSITION_BOX_HALF_M` | `150` | Half-size of symmetric crop box (meters). |
 | `SPLAT_COLLISION` | *(on)* | Set to `skip` / `none` / `0` to skip `collision.voxel.json` generation. |
@@ -113,6 +120,14 @@ Set before running (optional):
 | `SPLAT_COLLISION_BOX_Y_MIN` | *(auto)* | Optional absolute min Y for collision box (default: seed Y − box half). |
 | `SPLAT_COLLISION_BOX_Y_MAX` | *(auto)* | Optional absolute max Y for collision box (default: seed Y + box half). |
 | `SPLAT_COLLISION_FILTER_FLOATERS` | *(off)* | Set to `1` for GPU `--filter-floaters` before voxel. |
+| `SPLAT_HEIGHTMAP` | *(on)* | Set to `skip` to skip heightmap extract after voxels. |
+| `SPLAT_HEIGHTMAP_CELL` | *(auto)* | Height grid cell size (m) for `extract-heightmap.mjs`. |
+| `SPLAT_HEIGHTMAP_WALKABLE_BAND_MIN` | `6` | Min band height (m) above grid floor. |
+| `SPLAT_HEIGHTMAP_WALKABLE_BAND_MAX` | `30` | Cap on band height (m). Lower to ignore mid-air haze. |
+| `SPLAT_HEIGHTMAP_WALKABLE_BAND_FRACTION` | `0.85` | Fraction of grid Y span used for the band. |
+| `SPLAT_HEIGHTMAP_WALKABLE_MAX_Y` | *(off)* | Absolute Y ceiling; overrides the band formula. |
+
+**Per-scene helper:** faint floaters on UM_05 — [`generate-um05-voxels.ps1`](generate-um05-voxels.ps1) (`-Force`, `-Opacity 0.3`, `-HeightmapOnly`, `-WalkableBandMaxM 12`).
 
 Example — re-run UBC Farm with defaults:
 
@@ -194,6 +209,51 @@ Append `collisionDebug=1` to the viewer URL to draw:
 http://localhost:5173/viewer/?url=/work-out/{basename}/lod-meta.json&collisionDebug=1
 ```
 
+### Heightmap debug overlay (viewer)
+
+Append `heightmapDebug=1` to draw the loaded `heightmap.json` as a height-colored
+surface (blue = low → red = high), parented to the splat so it sits exactly where
+the camera ground clamp samples. Empty (sentinel) cells are skipped, so **holes in
+the heightmap render as holes** — the fastest way to confirm a SuperSplat re-clean
+improved ground coverage.
+
+```text
+http://localhost:5173/viewer/?url=/work-out/{basename}/lod-meta.json&heightmapDebug=1
+```
+
+| Param | Values | Effect |
+|-------|--------|--------|
+| `heightmapDebug` | `1` / `surface` | Translucent height-colored surface (default). |
+| `heightmapDebug` | `wire` | Wireframe instead of a filled surface. |
+| `heightmapDebugOpacity` | `0`–`1` | Surface opacity (default `0.6`; ignored for `wire`). |
+
+Works even with `groundClamp=0` (the heightmap still loads for the overlay). Combine
+with `collisionDebug=1` to compare the extracted heightmap against the source voxels.
+
+### Click-to-read coordinate picker (viewer)
+
+Append `coordReadout=1` to turn on a click-to-read position picker — the fastest
+way to find `SPLAT_COLLISION_SEED_POS` / box coordinates for a feature like a
+trench. Click a point in the scene and it casts a ray onto the heightmap ground
+(falling back to a horizontal plane) and reports the hit in the **splat's local
+frame**, which is exactly the frame `SPLAT_COLLISION_SEED_POS` and the `-B` box
+crop use.
+
+```text
+http://localhost:5173/viewer/?url=/work-out/{basename}/lod-meta.json&coordReadout=1
+```
+
+- A red marker shows where the click landed; the panel shows the local `x,y,z`.
+- **Copy seed** copies the last point as `x,y,z` for `SPLAT_COLLISION_SEED_POS`.
+- Click 2+ points (e.g. trench floor + both rims/ends) and **Copy box env** emits a
+  ready-to-paste `SPLAT_COLLISION_SEED_POS` / `BOX_HALF_M` / `BOX_Y_MIN` / `BOX_Y_MAX`
+  block (with a 1 m margin) that brackets all clicked points.
+- **Reset** clears the accumulated box.
+
+Note: coordinates are in the frame of the current splat (no baked rotation by
+default). If you regenerate with `SPLAT_ROTATION` set, the picker still reports the
+correct local frame because it reads the live splat transform.
+
 Generate the optional GLB mesh during batch (matches splat-transform exactly):
 
 ```powershell
@@ -256,6 +316,7 @@ Decimation and LOD bundling are relatively fast. **Steps 4a–4b (collision prep
 | `splat-transform failed` with short command line | Old script bug (fixed) | Pull latest script; ensure array args use `(...)` |
 | `Cannot find an overload for "Max"` | PowerShell `[math]::Max` arity | Pull latest script |
 | PlayCanvas scene upside-down | LOD exported without rotation | Re-run with default `SPLAT_ROTATION=180,0,0` or use `?orientation=180` on old CDN assets |
+| `[2/4] decimate` fails: `WebGPU device lost` / `DXGI_ERROR_DEVICE_HUNG` | GPU KNN pass overran the Windows driver watchdog (TDR) on a large splat | Script auto-retries on CPU; to skip the GPU attempt set `SPLAT_DECIMATE_DEVICE=cpu`. Also worth: update GPU drivers, close other GPU apps, or raise the `TdrDelay` registry value |
 | PlayCanvas freeze / smeared view | Bad scales or distant sky shell | Script auto-filters; check `work/batch-lod.log` for crop notes |
 | Step 4 appears hung / no output | Voxelization is CPU-heavy; old script buffered stderr | Kill stale `node`/`splat-transform` processes; pull latest script (prep cull + timeout); use `check-batch-progress.sh` |
 | Collision runs for days | Voxelizing full cropped LOD without prep | Stop run; pull latest script (default 60 m sphere prep); or `SPLAT_COLLISION=skip` |

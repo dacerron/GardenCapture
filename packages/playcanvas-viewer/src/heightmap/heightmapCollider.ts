@@ -58,6 +58,7 @@ export function createHeightmapGroundCollider(options: {
       return query.isReady();
     },
     getMinCameraY,
+    sampleGroundWorldY,
     clampWorldPosition(position) {
       const minY = getMinCameraY(position.x, position.y, position.z);
       if (minY !== null && position.y < minY) {
