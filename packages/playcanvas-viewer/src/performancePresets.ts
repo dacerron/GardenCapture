@@ -1,5 +1,6 @@
 import * as pc from "playcanvas";
 import type { PerformancePreset } from "@soil/shared/three/ScreenSpace";
+import { applyAlphaClipForward, getAlphaClipForwardForPreset } from "./alphaClip";
 import { isMobileLikeControls } from "./mobileCamera";
 
 /**
@@ -42,4 +43,5 @@ export function applySplatBudget(app: pc.AppBase, budgetM: number) {
 
 export function applyPerformancePreset(app: pc.AppBase, preset: PerformancePreset) {
   applySplatBudget(app, getSplatBudgetM(preset));
+  applyAlphaClipForward(app, getAlphaClipForwardForPreset(preset));
 }
