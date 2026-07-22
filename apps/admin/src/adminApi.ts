@@ -26,7 +26,11 @@ async function authHeader() {
 }
 
 function requireBaseUrl(): string {
-  if (!BASE) throw new Error("VITE_ADMIN_API_URL is not configured.");
+  if (!BASE) {
+    throw new Error(
+      "VITE_ADMIN_API_URL is not configured. Copy .env.example to .env and set your coFood API Gateway URL.",
+    );
+  }
   return BASE;
 }
 

@@ -271,7 +271,7 @@ export async function createPlayCanvasApp(
     app.assets.load(asset);
   });
 
-  reportLoad("Processing virtual soil...", 0.72);
+  reportLoad("Processing scene...", 0.72);
 
   app.start();
 
@@ -351,7 +351,7 @@ export async function createPlayCanvasApp(
       off: (name: string, fn: (...args: unknown[]) => void) => void;
     };
 
-    reportLoad("Finalizing virtual soil...", 0.92);
+    reportLoad("Finalizing scene...", 0.92);
 
     let settled = false;
     const finish = () => {
@@ -487,7 +487,7 @@ export async function createPlayCanvasApp(
     sceneCameraPosition,
   });
   heightClampHandle.clampNow();
-  reportLoad("Finalizing virtual soil...", 1);
+  reportLoad("Finalizing scene...", 1);
 
   const cameraInputGate = createCameraInputGate(controls ?? null);
   const editorOverlayLayer = showStartAxes

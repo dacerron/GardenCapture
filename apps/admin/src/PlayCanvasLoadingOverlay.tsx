@@ -8,7 +8,7 @@ type PlayCanvasLoadingOverlayProps = {
 export default function PlayCanvasLoadingOverlay({
   hint = "Preparing scene...",
   progress = null,
-  title = "Loading Virtual Soil",
+  title = "Loading scene",
   className = "",
 }: PlayCanvasLoadingOverlayProps) {
   const clampedProgress =
